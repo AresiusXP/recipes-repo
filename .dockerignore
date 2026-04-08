@@ -1,0 +1,15 @@
+# Docker ignore patterns
+node_modules
+.next
+.git
+*.md
+!README.md
+.env
+.env.*
+!.env.example
+prisma/*.db
+prisma/*.db-journal
+public/media/*
+.DS_Store
+coverage
+.vercel

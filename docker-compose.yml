@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:/app/data/recipes.db
+      - MEDIA_DIR=public/media
+      - AUTH_SECRET=${AUTH_SECRET:-change-me-to-a-random-secret}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+    volumes:
+      - recipes-data:/app/data
+      - recipes-media:/app/public/media
+    restart: unless-stopped
+
+volumes:
+  recipes-data:
+    driver: local
+  recipes-media:
+    driver: local
