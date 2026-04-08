@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { searchRecipes } from "@/app/actions/recipes";
+import { FavoriteButton } from "@/components/FavoriteButton";
 
 interface RecipeSummary {
   id: string;
@@ -11,6 +12,7 @@ interface RecipeSummary {
   description: string | null;
   imagePath: string | null;
   sourceUrl: string | null;
+  isFavorite: boolean;
   tags: string[];
   createdAt: string;
 }
@@ -18,9 +20,10 @@ interface RecipeSummary {
 interface RecipeListProps {
   initialRecipes: RecipeSummary[];
   initialTags: string[];
+  favoritesOnly?: boolean;
 }
 
-export function RecipeList({ initialRecipes, initialTags }: RecipeListProps) {
+export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false }: RecipeListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -36,14 +39,14 @@ export function RecipeList({ initialRecipes, initialTags }: RecipeListProps) {
   const loadRecipes = useCallback(async () => {
     setLoading(true);
     try {
-      const results = await searchRecipes(query, selectedTags);
+      const results = await searchRecipes(query, selectedTags, favoritesOnly);
       setRecipes(results);
     } catch (err) {
       console.error("Failed to load recipes:", err);
     } finally {
       setLoading(false);
     }
-  }, [query, selectedTags]);
+  }, [query, selectedTags, favoritesOnly]);
 
   // Reload recipes when query or tags change (skip initial render)
   const [isInitialRender, setIsInitialRender] = useState(true);
@@ -59,7 +62,7 @@ export function RecipeList({ initialRecipes, initialTags }: RecipeListProps) {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
       if (selectedTags.length > 0) params.set("tags", selectedTags.join(","));
-      const newUrl = params.toString() ? `?${params.toString()}` : "/recipes";
+      const newUrl = params.toString() ? `?${params.toString()}` : favoritesOnly ? "/recipes/favorites" : "/recipes";
       router.replace(newUrl, { scroll: false });
     }, 300);
 
@@ -210,8 +213,20 @@ export function RecipeList({ initialRecipes, initialTags }: RecipeListProps) {
             <Link
               key={recipe.id}
               href={`/recipes/${recipe.id}`}
-              className="group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+              className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
             >
+              <div className="absolute right-2 top-2 z-10">
+                <FavoriteButton
+                  recipeId={recipe.id}
+                  initialFavorite={recipe.isFavorite}
+                  compact
+                  onToggled={(isFav) => {
+                    if (favoritesOnly && !isFav) {
+                      setRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+                    }
+                  }}
+                />
+              </div>
               {recipe.imagePath && (
                 <div className="aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

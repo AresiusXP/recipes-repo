@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+
 export interface GeminiRecipeResult {
   title: string;
   description: string;
@@ -13,13 +15,14 @@ export interface GeminiRecipeResult {
 /**
  * Sends page content to Gemini and requests structured recipe extraction.
  * Ingredients are converted to metric measurements.
+ * All output is forced to English regardless of the source language.
  */
 export async function extractRecipeWithGemini(
   pageContent: string,
   sourceUrl: string
 ): Promise<GeminiRecipeResult> {
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: GEMINI_MODEL,
     generationConfig: { responseMimeType: "application/json" },
   });
 
@@ -35,7 +38,7 @@ export async function extractRecipeWithGemini(
 
 IMPORTANT RULES:
 1. Convert ALL imperial measurements to metric (cups to ml, oz to g, lbs to kg, °F to °C, inches to cm, etc.)
-2. Keep ingredient names and descriptions in the original language of the recipe
+2. ALL output MUST be in English. Translate the title, description, ingredient names, step descriptions, and tags into English regardless of the original language of the recipe.
 3. Tags should be lowercase, relevant food categories (e.g., "vegetarian", "dessert", "italian", "quick", "gluten-free")
 4. Return ONLY valid JSON, no markdown code blocks, no explanation
 5. If you cannot extract a recipe, return: {"error": "Could not extract recipe from this content"}

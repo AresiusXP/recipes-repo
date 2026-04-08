@@ -59,6 +59,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.existingSecret }}
                   key: {{ .Values.secrets.keys.geminiApiKey }}
+            - name: GEMINI_MODEL
+              value: {{ .Values.config.geminiModel | quote }}
           volumeMounts:
             {{- if .Values.persistence.data.enabled }}
             - name: data

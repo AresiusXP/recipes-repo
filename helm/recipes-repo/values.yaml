@@ -19,6 +19,8 @@ config:
   mediaDir: "public/media"
   # SQLite database path inside the container
   databaseUrl: "file:/app/data/recipes.db"
+  # Gemini model to use for recipe extraction
+  geminiModel: "gemini-2.0-flash"
 
 # Secret references — these must exist in the cluster
 # Create them with:

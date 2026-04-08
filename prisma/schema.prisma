@@ -66,6 +66,7 @@ model Recipe {
   ingredients String   // JSON string array
   steps       String   // JSON string array
   rawContent  String?  // Original scraped content for reference
+  isFavorite  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

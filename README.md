@@ -7,8 +7,10 @@ A mobile-first web application for saving, organizing, and browsing food recipes
 - **Import recipes from URL** — paste a link and AI extracts ingredients, steps, and tags
 - **Manual paste fallback** — paste recipe text directly if URL scraping fails
 - **Metric conversion** — imperial measurements are automatically converted to metric
+- **English output** — all recipe content is translated to English regardless of source language
 - **Image capture** — recipe images are downloaded and stored locally
 - **Search & filter** — browse recipes by text search and tag filtering
+- **Favorites** — star recipes and browse them on a dedicated favorites page
 - **Edit recipes** — correct or refine AI-extracted content
 - **Google login** — authentication via Google OAuth
 - **Mobile-first UI** — optimized for phones, works on desktop too
@@ -51,6 +53,7 @@ Edit `.env` and fill in:
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `GEMINI_API_KEY` | Google Gemini API key |
+| `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
 | `DATABASE_URL` | SQLite path (default: `file:./dev.db`) |
 | `NEXTAUTH_URL` | App URL (default: `http://localhost:3000`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
@@ -131,6 +134,7 @@ See [`helm/recipes-repo/values.yaml`](helm/recipes-repo/values.yaml) for all con
 
 - `image.repository` / `image.tag` — container image
 - `config.nextauthUrl` — public URL for OAuth callbacks
+- `config.geminiModel` — Gemini model name (default: `gemini-2.0-flash`)
 - `secrets.existingSecret` — name of the Kubernetes Secret
 - `ingress.*` — ingress hostname, TLS, and annotations
 - `persistence.data.size` / `persistence.media.size` — storage sizes
@@ -144,7 +148,7 @@ src/
 │   ├── actions/          # Server actions (recipe CRUD)
 │   ├── api/auth/         # NextAuth API route
 │   ├── login/            # Login page
-│   ├── recipes/          # Recipe pages (list, detail, edit, new)
+│   ├── recipes/          # Recipe pages (list, detail, edit, new, favorites)
 │   ├── globals.css       # Tailwind styles
 │   ├── layout.tsx        # Root layout
 │   └── page.tsx          # Root redirect

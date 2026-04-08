@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { DeleteRecipeButton } from "@/components/DeleteRecipeButton";
+import { FavoriteButton } from "@/components/FavoriteButton";
 
 export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
   const session = await requireAuth();
@@ -36,6 +37,10 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
             {recipe.title}
           </h1>
           <div className="flex shrink-0 items-center gap-2">
+            <FavoriteButton
+              recipeId={id}
+              initialFavorite={recipe.isFavorite}
+            />
             <Link
               href={`/recipes/${id}/edit`}
               className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"

@@ -261,14 +261,47 @@ export async function deleteRecipe(recipeId: string): Promise<void> {
   redirect("/recipes");
 }
 
+// ─── Toggle favorite ───
+
+export async function toggleFavorite(
+  recipeId: string
+): Promise<{ success: boolean; isFavorite?: boolean; error?: string }> {
+  const session = await requireAuth();
+
+  const recipe = await prisma.recipe.findUnique({
+    where: { id: recipeId },
+    select: { userId: true, isFavorite: true },
+  });
+
+  if (!recipe || recipe.userId !== session.user.id) {
+    return { success: false, error: "Recipe not found" };
+  }
+
+  const updated = await prisma.recipe.update({
+    where: { id: recipeId },
+    data: { isFavorite: !recipe.isFavorite },
+    select: { isFavorite: true },
+  });
+
+  revalidatePath("/recipes");
+  revalidatePath(`/recipes/${recipeId}`);
+  revalidatePath("/recipes/favorites");
+
+  return { success: true, isFavorite: updated.isFavorite };
+}
+
 // ─── Search & filter ───
 
-export async function searchRecipes(query: string, tagNames: string[]) {
+export async function searchRecipes(query: string, tagNames: string[], favoritesOnly = false) {
   const session = await requireAuth();
 
   const where: Record<string, unknown> = {
     userId: session.user.id,
   };
+
+  if (favoritesOnly) {
+    where.isFavorite = true;
+  }
 
   // Text search on title and ingredients
   if (query.trim()) {
@@ -302,12 +335,13 @@ export async function searchRecipes(query: string, tagNames: string[]) {
     orderBy: { createdAt: "desc" },
   });
 
-  return recipes.map((r: { id: string; title: string; description: string | null; imagePath: string | null; sourceUrl: string | null; tags: { tag: { name: string } }[]; createdAt: Date }) => ({
+  return recipes.map((r: { id: string; title: string; description: string | null; imagePath: string | null; sourceUrl: string | null; isFavorite: boolean; tags: { tag: { name: string } }[]; createdAt: Date }) => ({
     id: r.id,
     title: r.title,
     description: r.description,
     imagePath: r.imagePath,
     sourceUrl: r.sourceUrl,
+    isFavorite: r.isFavorite,
     tags: r.tags.map((rt: { tag: { name: string } }) => rt.tag.name),
     createdAt: r.createdAt.toISOString(),
   }));
