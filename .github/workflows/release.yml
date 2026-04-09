@@ -11,7 +11,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
   CHART_PATH: helm/recipes-repo
 
 permissions:
@@ -34,6 +33,14 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      # ── Normalise names to lowercase (GHCR requirement) ────
+      - name: Lowercase registry paths
+        id: registry
+        shell: bash
+        run: |
+          echo "image_name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       # ── Container image ──────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,9 +57,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.REGISTRY }}/${{ steps.registry.outputs.image_name }}:${{ steps.version.outputs.version }}
 
       # ── Helm chart ───────────────────────────────────────────
       - name: Install Helm
@@ -74,7 +79,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
             --username "${{ github.actor }}" --password-stdin
           helm push recipes-repo-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+            oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
 
       # ── Commit version bump back to main ─────────────────────
       - name: Commit Chart.yaml changes to main

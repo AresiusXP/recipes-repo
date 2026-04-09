@@ -33,6 +33,13 @@ jobs:
           CHART_VERSION="${GITHUB_REF_NAME#helm-v}"
           echo "chart_version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
 
+      # ── Normalise names to lowercase (GHCR requirement) ────
+      - name: Lowercase registry paths
+        id: registry
+        shell: bash
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
       # ── Helm chart ───────────────────────────────────────────
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -52,7 +59,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
             --username "${{ github.actor }}" --password-stdin
           helm push recipes-repo-${{ steps.version.outputs.chart_version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+            oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
 
       # ── Commit version bump back to main ─────────────────────
       - name: Commit Chart.yaml changes to main
