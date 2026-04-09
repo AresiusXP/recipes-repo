@@ -1,0 +1,70 @@
+# Triggered on chart-only release tags (helm-v1.2.3).
+# Bumps only the Helm chart version (not appVersion) and publishes
+# the chart as an OCI artifact to GHCR.
+
+name: Helm Release
+
+on:
+  push:
+    tags:
+      - "helm-v*"
+
+env:
+  REGISTRY: ghcr.io
+  CHART_PATH: helm/recipes-repo
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  helm-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout the tagged commit ───────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Derive version from tag ──────────────────────────────
+      - name: Extract chart version from tag
+        id: version
+        run: |
+          CHART_VERSION="${GITHUB_REF_NAME#helm-v}"
+          echo "chart_version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+
+      # ── Helm chart ───────────────────────────────────────────
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Update Chart.yaml version
+        run: |
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+          yq -i ".version = \"${CHART_VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          echo "Updated Chart.yaml:"
+          cat "${{ env.CHART_PATH }}/Chart.yaml"
+
+      - name: Package Helm chart
+        run: helm package "${{ env.CHART_PATH }}"
+
+      - name: Push Helm chart to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
+            --username "${{ github.actor }}" --password-stdin
+          helm push recipes-repo-${{ steps.version.outputs.chart_version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+
+      # ── Commit version bump back to main ─────────────────────
+      - name: Commit Chart.yaml changes to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -f main
+          CHART_VERSION="${{ steps.version.outputs.chart_version }}"
+          yq -i ".version = \"${CHART_VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          git add "${{ env.CHART_PATH }}/Chart.yaml"
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: bump chart to ${{ steps.version.outputs.chart_version }} [skip ci]"
+          git pull --rebase origin main
+          git push origin main

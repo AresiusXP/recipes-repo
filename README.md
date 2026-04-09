@@ -94,14 +94,25 @@ Data persists across restarts via Docker volumes (`recipes-data` and `recipes-me
 
 ## Kubernetes Deployment (Helm)
 
-### 1. Build and push the Docker image
+### Container image and Helm chart
 
-```bash
-docker build -t your-registry/recipes-repo:latest .
-docker push your-registry/recipes-repo:latest
-```
+Both the container image and the Helm chart are published automatically to
+GitHub Container Registry (GHCR) via GitHub Actions.
 
-### 2. Create the Kubernetes Secret
+| Artifact | Location |
+|---|---|
+| Container image | `ghcr.io/aresiusxp/recipes-repo:<version>` |
+| Helm chart (OCI) | `oci://ghcr.io/aresiusxp/charts/recipes-repo` |
+
+#### Releasing
+
+- **App release** — push a tag like `v1.2.3`. This builds and pushes the
+  container image, updates `Chart.yaml` (`version` + `appVersion`), and
+  publishes the Helm chart.
+- **Chart-only release** — push a tag like `helm-v1.2.4`. This bumps only the
+  chart `version` (keeps the existing `appVersion`) and publishes the chart.
+
+### 1. Create the Kubernetes Secret
 
 ```bash
 kubectl create secret generic recipes-repo-secrets \
@@ -111,19 +122,22 @@ kubectl create secret generic recipes-repo-secrets \
   --from-literal=gemini-api-key="your-gemini-key"
 ```
 
-### 3. Install with Helm
+### 2. Install with Helm
 
 ```bash
-helm install recipes-repo ./helm/recipes-repo \
-  --set image.repository=your-registry/recipes-repo \
-  --set image.tag=latest \
+# Pull and install from GHCR OCI registry
+helm install recipes-repo oci://ghcr.io/aresiusxp/charts/recipes-repo \
+  --version 1.2.3 \
   --set config.nextauthUrl=https://recipes.yourdomain.com \
   --set ingress.hosts[0].host=recipes.yourdomain.com \
   --set ingress.hosts[0].paths[0].path=/ \
   --set ingress.hosts[0].paths[0].pathType=Prefix
 ```
 
-### 4. Update Google OAuth redirect URI
+The image tag defaults to the chart's `appVersion`, so you do not need to set
+`image.tag` explicitly unless you want to override it.
+
+### 3. Update Google OAuth redirect URI
 
 Add your production domain to the OAuth redirect URIs:
 - `https://recipes.yourdomain.com/api/auth/callback/google`
@@ -132,7 +146,7 @@ Add your production domain to the OAuth redirect URIs:
 
 See [`helm/recipes-repo/values.yaml`](helm/recipes-repo/values.yaml) for all configurable options, including:
 
-- `image.repository` / `image.tag` — container image
+- `image.repository` / `image.tag` — container image (tag defaults to `appVersion`)
 - `config.nextauthUrl` — public URL for OAuth callbacks
 - `config.geminiModel` — Gemini model name (default: `gemini-2.0-flash`)
 - `secrets.existingSecret` — name of the Kubernetes Secret
@@ -165,6 +179,8 @@ prisma/
 └── schema.prisma         # Database schema
 helm/
 └── recipes-repo/         # Helm chart
+.github/
+└── workflows/            # CI/CD pipelines (release + helm-release)
 docker-compose.yml        # Local container setup
 Dockerfile                # Production container
 ```

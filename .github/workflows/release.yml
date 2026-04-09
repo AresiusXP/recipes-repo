@@ -1,0 +1,93 @@
+# Triggered on app release tags (v1.2.3).
+# Builds and pushes the container image to GHCR, then updates the Helm chart
+# (both version and appVersion) and publishes it as an OCI artifact.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  CHART_PATH: helm/recipes-repo
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout the tagged commit ───────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Derive version from tag ──────────────────────────────
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      # ── Container image ──────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      # ── Helm chart ───────────────────────────────────────────
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Update Chart.yaml versions
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          echo "Updated Chart.yaml:"
+          cat "${{ env.CHART_PATH }}/Chart.yaml"
+
+      - name: Package Helm chart
+        run: helm package "${{ env.CHART_PATH }}"
+
+      - name: Push Helm chart to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
+            --username "${{ github.actor }}" --password-stdin
+          helm push recipes-repo-${{ steps.version.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+
+      # ── Commit version bump back to main ─────────────────────
+      - name: Commit Chart.yaml changes to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -f main
+          VERSION="${{ steps.version.outputs.version }}"
+          yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          git add "${{ env.CHART_PATH }}/Chart.yaml"
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: bump chart to ${{ steps.version.outputs.version }} [skip ci]"
+          git pull --rebase origin main
+          git push origin main

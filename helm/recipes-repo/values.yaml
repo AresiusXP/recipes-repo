@@ -3,9 +3,10 @@
 replicaCount: 1
 
 image:
-  repository: recipes-repo
+  repository: ghcr.io/aresiusxp/recipes-repo
   pullPolicy: IfNotPresent
-  tag: "latest"
+  # Defaults to Chart.appVersion when left empty
+  tag: ""
 
 imagePullSecrets: []
 nameOverride: ""
