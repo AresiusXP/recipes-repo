@@ -1,11 +1,18 @@
 import { auth, signIn } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
-export default async function LoginPage() {
+interface LoginPageProps {
+  searchParams: Promise<{ error?: string }>;
+}
+
+export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await auth();
   if (session?.user) {
     redirect("/recipes");
   }
+
+  const { error } = await searchParams;
+  const isRegistrationBlocked = error === "RegistrationNotAllowed";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-orange-50 to-white dark:from-zinc-900 dark:to-zinc-950 px-4">
@@ -18,6 +25,12 @@ export default async function LoginPage() {
             Sign in to manage your recipe collection
           </p>
         </div>
+
+        {isRegistrationBlocked && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+            Registration is currently restricted. Your email address is not on the approved list. Please contact the administrator if you believe this is a mistake.
+          </div>
+        )}
 
         <form
           action={async () => {
