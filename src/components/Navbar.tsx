@@ -13,7 +13,7 @@ export async function Navbar() {
           href="/recipes"
           className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
         >
-          <span className="text-xl">🍳</span>
+            <img src="/favicon.ico" alt="Recipes" className="h-6 w-6" />
           <span className="hidden sm:inline">Recipes Repo</span>
         </Link>
 
