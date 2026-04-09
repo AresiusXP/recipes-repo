@@ -26,20 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── Derive version from tag ──────────────────────────────
+      # ── Derive version and lowercase image name from tag ────
       - name: Extract version from tag
         id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      # ── Normalise names to lowercase (GHCR requirement) ────
-      - name: Lowercase registry paths
-        id: registry
-        shell: bash
+      - name: Lowercase repository and owner
         run: |
-          echo "image_name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
       # ── Container image ──────────────────────────────────────
       - name: Set up Docker Buildx
@@ -88,7 +85,7 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
             --username "${{ github.actor }}" --password-stdin
           helm push recipes-repo-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
+            oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/charts
 
       # ── Commit version bump back to main ─────────────────────
       - name: Commit Chart.yaml changes to main
