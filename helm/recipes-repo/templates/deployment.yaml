@@ -28,6 +28,16 @@ spec:
         runAsUser: 1001
         runAsGroup: 1001
         fsGroup: 1001
+      initContainers:
+        - name: db-push
+          image: "{{ .Values.migrator.image.repository }}:{{ .Values.migrator.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.migrator.image.pullPolicy }}
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.config.databaseUrl | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -70,10 +80,8 @@ spec:
             - name: GEMINI_MODEL
               value: {{ .Values.config.geminiModel | quote }}
           volumeMounts:
-            {{- if .Values.persistence.data.enabled }}
             - name: data
               mountPath: /app/data
-            {{- end }}
             {{- if .Values.persistence.media.enabled }}
             - name: media
               mountPath: /app/public/media
@@ -89,11 +97,13 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
-        {{- if .Values.persistence.data.enabled }}
         - name: data
+          {{- if .Values.persistence.data.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "recipes-repo.fullname" . }}-data
-        {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         {{- if .Values.persistence.media.enabled }}
         - name: media
           persistentVolumeClaim:

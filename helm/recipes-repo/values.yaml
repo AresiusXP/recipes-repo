@@ -12,6 +12,14 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# Database schema migrator (runs as an initContainer before the app starts)
+migrator:
+  image:
+    repository: ghcr.io/aresiusxp/recipes-repo-migrator
+    pullPolicy: IfNotPresent
+    # Defaults to Chart.appVersion when left empty
+    tag: ""
+
 # Application environment configuration
 config:
   # Base URL for OAuth callbacks (must match your ingress hostname).

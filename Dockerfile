@@ -18,6 +18,34 @@ RUN mkdir -p public
 # Generate Prisma client and build Next.js
 RUN npx prisma generate && npm run build
 
+# ─── Migrator stage ───
+# Lightweight image with full Prisma CLI for running db push / migrate.
+# Used as a Kubernetes initContainer before the app starts.
+FROM node:20-alpine AS migrator
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Create non-root user (same UID/GID as the runner for shared volume permissions)
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Install only production dependencies (includes Prisma CLI + full dep tree)
+COPY package.json package-lock.json ./
+COPY prisma ./prisma/
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
+RUN npm ci --omit=dev
+
+# Create data directory with correct permissions
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data /app/prisma
+
+ENV DATABASE_URL="file:/app/data/recipes.db"
+
+USER nextjs
+
+CMD ["npx", "prisma", "db", "push", "--skip-generate"]
+
 # ─── Production stage ───
 FROM node:20-alpine AS runner
 
@@ -35,22 +63,15 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma schema and config (needed for db push at startup)
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+# Copy generated Prisma client (needed at runtime by the app)
 COPY --from=builder /app/src/generated ./src/generated
-
-# Copy Prisma CLI and dependencies for db push
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
 
 # Copy entrypoint
 COPY docker-entrypoint.sh ./
 
 # Create data and media directories with correct permissions
 RUN mkdir -p /app/public/media /app/data && \
-    chown -R nextjs:nodejs /app/public/media /app/data /app/prisma
+    chown -R nextjs:nodejs /app/public/media /app/data
 
 # Default environment
 ENV DATABASE_URL="file:/app/data/recipes.db"

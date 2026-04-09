@@ -56,8 +56,17 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: runner
           push: true
           tags: ${{ env.REGISTRY }}/${{ steps.registry.outputs.image_name }}:${{ steps.version.outputs.version }}
+
+      - name: Build and push migrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ steps.registry.outputs.image_name }}-migrator:${{ steps.version.outputs.version }}
 
       # ── Helm chart ───────────────────────────────────────────
       - name: Install Helm
