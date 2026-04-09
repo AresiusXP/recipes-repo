@@ -13,6 +13,9 @@ npm run dev          # Start Next.js dev server (http://localhost:3000)
 npm run build        # Production build (standalone output)
 npm run start        # Serve production build
 npm run lint         # ESLint (core-web-vitals + typescript presets)
+npm run test         # Run unit tests once (Vitest)
+npm run test:watch   # Run tests in watch mode
+npm run test:ci      # Run tests with verbose reporter (CI)
 
 npm run db:generate  # Regenerate Prisma client
 npm run db:push      # Push schema to database without migrations
@@ -22,13 +25,37 @@ npm run db:studio    # Open Prisma Studio GUI
 
 ### Testing
 
-There is **no test runner configured** in this repository. No `test` script exists in `package.json`, and no Jest, Vitest, Playwright, or Cypress config files are present. There are no `*.test.*` or `*.spec.*` files.
+This repository uses **Vitest** for unit and integration testing. Configuration is in `vitest.config.ts`.
 
-**Running a single test is not supported.** If you add a test framework, update this section.
+```bash
+npm run test             # Run all tests once
+npm run test:watch       # Run tests in watch mode during development
+npm run test -- src/lib  # Run tests matching a path pattern
+```
+
+Test files live alongside the source files they test using the `*.test.ts` naming convention (e.g., `src/lib/scraper.test.ts` tests `src/lib/scraper.ts`).
+
+**What is tested:**
+- Server actions (`src/app/actions/recipes.ts`, `src/app/actions/user.ts`) — input validation, ownership checks, CRUD behavior, error handling
+- Utility modules (`src/lib/require-auth.ts`, `src/lib/scraper.ts`, `src/lib/image-storage.ts`) — auth guards, HTML parsing, file validation
+
+**What is mocked:**
+- Prisma client (`@/lib/prisma`)
+- Gemini AI functions (`@/lib/gemini`)
+- Global `fetch`
+- Filesystem operations (`fs/promises`)
+- Next.js helpers (`next/navigation`, `next/cache`)
+
+Tests do **not** require a database, network access, or API keys. All external dependencies are mocked.
+
+**Writing new tests:**
+- Use `vi.hoisted()` for mock variables referenced inside `vi.mock()` factories (Vitest hoists `vi.mock` calls above variable declarations)
+- Follow the existing pattern: mock external modules, import the module under test, assert behavior
+- Place test files next to the source file they cover
 
 ### Validating changes
 
-Use `npm run lint` and `npm run build` to verify correctness. The build will catch TypeScript errors, broken imports, and invalid Next.js conventions.
+Use `npm run lint`, `npm run test`, and `npm run build` to verify correctness. The CI pipeline (`.github/workflows/ci.yml`) runs all three on every pull request and push to `main`.
 
 ## Tech Stack
 
