@@ -43,6 +43,8 @@ model User {
   emailVerified DateTime?
   image         String?
 
+  translateRecipes Boolean @default(true)
+
   accounts Account[]
   sessions Session[]
   recipes  Recipe[]
@@ -69,6 +71,9 @@ model Recipe {
   isFavorite  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  sourceLanguage        String?  // Detected language (e.g. "es", "fr", "en")
+  isTranslatedToEnglish Boolean  @default(false)
 
   userId String
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)

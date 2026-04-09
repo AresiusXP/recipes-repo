@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { DeleteRecipeButton } from "@/components/DeleteRecipeButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { TranslateRecipeButton } from "@/components/TranslateRecipeButton";
 
 export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
   const session = await requireAuth();
@@ -27,6 +28,12 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const ingredients: string[] = JSON.parse(recipe.ingredients);
   const steps: string[] = JSON.parse(recipe.steps);
   const tags = recipe.tags.map((rt: { tag: { name: string } }) => rt.tag.name);
+
+  // Show translate button if recipe is not in English and hasn't been translated
+  const showTranslateButton =
+    recipe.sourceLanguage !== null &&
+    recipe.sourceLanguage !== "en" &&
+    !recipe.isTranslatedToEnglish;
 
   return (
     <article className="mx-auto max-w-2xl">
@@ -77,6 +84,11 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
               {new URL(recipe.sourceUrl).hostname}
             </a>
           </p>
+        )}
+        {showTranslateButton && (
+          <div className="mt-3">
+            <TranslateRecipeButton recipeId={id} />
+          </div>
         )}
       </div>
 

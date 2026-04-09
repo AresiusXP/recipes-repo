@@ -7,7 +7,7 @@ A mobile-first web application for saving, organizing, and browsing food recipes
 - **Import recipes from URL** — paste a link and AI extracts ingredients, steps, and tags
 - **Manual paste fallback** — paste recipe text directly if URL scraping fails
 - **Metric conversion** — imperial measurements are automatically converted to metric
-- **English output** — all recipe content is translated to English regardless of source language
+- **English translation** — optionally translate imported recipes to English (configurable in settings), with per-recipe translation for already imported content
 - **Image capture** — recipe images are downloaded and stored locally
 - **Search & filter** — browse recipes by text search and tag filtering
 - **Favorites** — star recipes and browse them on a dedicated favorites page

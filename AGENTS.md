@@ -43,10 +43,12 @@ Use `npm run lint` and `npm run build` to verify correctness. The build will cat
 ```
 src/
 ├── app/
-│   ├── actions/recipes.ts   # All server actions (recipe CRUD)
+│   ├── actions/recipes.ts   # Server actions (recipe CRUD, translate)
+│   ├── actions/user.ts      # Server actions (user settings)
 │   ├── api/auth/             # NextAuth route handler (minimal)
 │   ├── login/                # Login page
 │   ├── recipes/              # Recipe pages (list, detail, edit, new, favorites)
+│   ├── settings/             # User settings page
 │   ├── globals.css           # Tailwind styles
 │   ├── layout.tsx            # Root layout
 │   └── page.tsx              # Root redirect

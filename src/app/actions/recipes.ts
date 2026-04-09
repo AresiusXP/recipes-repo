@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { scrapePage } from "@/lib/scraper";
-import { extractRecipeWithGemini } from "@/lib/gemini";
+import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
 import { downloadImage, deleteImage } from "@/lib/image-storage";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -48,6 +48,13 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
   }
 
   try {
+    // Load user translation preference
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { translateRecipes: true },
+    });
+    const translateToEnglish = user?.translateRecipes ?? true;
+
     // Scrape the page
     let scraped;
     try {
@@ -63,7 +70,7 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     // Extract recipe with Gemini
     let recipe;
     try {
-      recipe = await extractRecipeWithGemini(scraped.content, url);
+      recipe = await extractRecipeWithGemini(scraped.content, url, { translateToEnglish });
     } catch (aiError) {
       const msg = aiError instanceof Error ? aiError.message : "Unknown error";
       return {
@@ -96,6 +103,10 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       })
     );
 
+    // Determine translation state
+    const isEnglish = recipe.detectedLanguage === "en";
+    const isTranslatedToEnglish = !isEnglish && translateToEnglish;
+
     // Create recipe
     const created = await prisma.recipe.create({
       data: {
@@ -106,6 +117,8 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
         ingredients: JSON.stringify(recipe.ingredients),
         steps: JSON.stringify(recipe.steps),
         rawContent: scraped.content.slice(0, 50000),
+        sourceLanguage: recipe.detectedLanguage,
+        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
         userId: session.user.id,
         tags: {
           create: tagRecords.map((tag: { id: string; name: string }) => ({
@@ -136,7 +149,18 @@ export async function importRecipeFromText(
   }
 
   try {
-    const recipe = await extractRecipeWithGemini(text, sourceUrl || "manual entry");
+    // Load user translation preference
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { translateRecipes: true },
+    });
+    const translateToEnglish = user?.translateRecipes ?? true;
+
+    const recipe = await extractRecipeWithGemini(
+      text,
+      sourceUrl || "manual entry",
+      { translateToEnglish }
+    );
 
     const tagRecords = await Promise.all(
       recipe.tags.map(async (name) => {
@@ -148,6 +172,10 @@ export async function importRecipeFromText(
       })
     );
 
+    // Determine translation state
+    const isEnglish = recipe.detectedLanguage === "en";
+    const isTranslatedToEnglish = !isEnglish && translateToEnglish;
+
     const created = await prisma.recipe.create({
       data: {
         title: recipe.title,
@@ -157,6 +185,8 @@ export async function importRecipeFromText(
         ingredients: JSON.stringify(recipe.ingredients),
         steps: JSON.stringify(recipe.steps),
         rawContent: text.slice(0, 50000),
+        sourceLanguage: recipe.detectedLanguage,
+        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
         userId: session.user.id,
         tags: {
           create: tagRecords.map((tag: { id: string; name: string }) => ({
@@ -170,6 +200,76 @@ export async function importRecipeFromText(
     return { success: true, recipeId: created.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to process recipe";
+    return { success: false, error: message };
+  }
+}
+
+// ─── Translate existing recipe ───
+
+export async function translateRecipe(
+  recipeId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await requireAuth();
+
+  const recipe = await prisma.recipe.findUnique({
+    where: { id: recipeId },
+    select: {
+      userId: true,
+      title: true,
+      description: true,
+      ingredients: true,
+      steps: true,
+      sourceLanguage: true,
+      isTranslatedToEnglish: true,
+    },
+  });
+
+  if (!recipe || recipe.userId !== session.user.id) {
+    return { success: false, error: "Recipe not found" };
+  }
+
+  if (recipe.isTranslatedToEnglish) {
+    return { success: true }; // Already translated
+  }
+
+  if (recipe.sourceLanguage === "en") {
+    // Already in English, just mark it
+    await prisma.recipe.update({
+      where: { id: recipeId },
+      data: { isTranslatedToEnglish: true },
+    });
+    revalidatePath("/recipes");
+    revalidatePath(`/recipes/${recipeId}`);
+    return { success: true };
+  }
+
+  try {
+    const ingredients: string[] = JSON.parse(recipe.ingredients);
+    const steps: string[] = JSON.parse(recipe.steps);
+
+    const translated = await translateRecipeWithGemini({
+      title: recipe.title,
+      description: recipe.description || "",
+      ingredients,
+      steps,
+    });
+
+    await prisma.recipe.update({
+      where: { id: recipeId },
+      data: {
+        title: translated.title,
+        description: translated.description,
+        ingredients: JSON.stringify(translated.ingredients),
+        steps: JSON.stringify(translated.steps),
+        isTranslatedToEnglish: true,
+      },
+    });
+
+    revalidatePath("/recipes");
+    revalidatePath(`/recipes/${recipeId}`);
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to translate recipe";
     return { success: false, error: message };
   }
 }
