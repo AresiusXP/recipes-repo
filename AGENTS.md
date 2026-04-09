@@ -194,5 +194,6 @@ Required variables are documented in `.env.example`:
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `DATABASE_URL` | SQLite database path (default: `file:./dev.db`) |
 | `NEXTAUTH_URL` | App base URL for OAuth callbacks |
+| `AUTH_URL` | Auth.js v5 app URL (same as `NEXTAUTH_URL`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
 | `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations (empty = open) |

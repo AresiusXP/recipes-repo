@@ -56,6 +56,7 @@ Edit `.env` and fill in:
 | `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
 | `DATABASE_URL` | SQLite path (default: `file:./dev.db`) |
 | `NEXTAUTH_URL` | App URL (default: `http://localhost:3000`) |
+| `AUTH_URL` | Auth.js v5 app URL (same as `NEXTAUTH_URL`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
 
 ### 3. Set up Google OAuth

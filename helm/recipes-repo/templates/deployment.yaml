@@ -39,6 +39,10 @@ spec:
               value: {{ .Values.config.mediaDir | quote }}
             - name: NEXTAUTH_URL
               value: {{ .Values.config.nextauthUrl | quote }}
+            - name: AUTH_URL
+              value: {{ .Values.config.nextauthUrl | quote }}
+            - name: AUTH_TRUST_HOST
+              value: "true"
             - name: AUTH_SECRET
               valueFrom:
                 secretKeyRef:
