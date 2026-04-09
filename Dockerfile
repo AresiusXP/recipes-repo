@@ -44,7 +44,7 @@ ENV DATABASE_URL="file:/app/data/recipes.db"
 
 USER nextjs
 
-CMD ["npx", "prisma", "db", "push", "--skip-generate"]
+CMD ["npx", "prisma", "db", "push"]
 
 # ─── Production stage ───
 FROM node:20-alpine AS runner
