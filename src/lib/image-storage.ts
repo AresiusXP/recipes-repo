@@ -92,6 +92,77 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
 }
 
 /**
+ * Saves an uploaded File to the media directory.
+ * Returns the public path for serving, or null on failure.
+ */
+export async function saveUploadedImage(file: File): Promise<string | null> {
+  try {
+    // Validate MIME type
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      console.error(`Unsupported image type: ${file.type}`);
+      return null;
+    }
+
+    // Validate size
+    if (file.size > MAX_SIZE) {
+      console.error(`Image too large: ${file.size} bytes`);
+      return null;
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Double-check actual size
+    if (buffer.length > MAX_SIZE) {
+      console.error(`Image too large after reading: ${buffer.length} bytes`);
+      return null;
+    }
+
+    // Determine file extension
+    const extMap: Record<string, string> = {
+      "image/jpeg": ".jpg",
+      "image/png": ".png",
+      "image/webp": ".webp",
+      "image/gif": ".gif",
+    };
+    const ext = extMap[file.type] || ".jpg";
+
+    // Generate unique filename
+    const filename = `${uuidv4()}${ext}`;
+
+    // Ensure media directory exists
+    const cwd = /* turbopackIgnore: true */ process.cwd();
+    const absoluteMediaDir = path.resolve(cwd, MEDIA_DIR);
+    await fs.mkdir(absoluteMediaDir, { recursive: true });
+
+    // Write file
+    const filePath = path.join(absoluteMediaDir, filename);
+    await fs.writeFile(filePath, buffer);
+
+    // Return public-accessible path
+    const publicPath = MEDIA_DIR.startsWith("public/")
+      ? `/${MEDIA_DIR.slice("public/".length)}/${filename}`
+      : `/media/${filename}`;
+
+    return publicPath;
+  } catch (error) {
+    console.error("Failed to save uploaded image:", error);
+    return null;
+  }
+}
+
+/**
+ * Check whether a path is a locally managed media file (as opposed to an external URL).
+ * Derives the expected prefix from MEDIA_DIR so it stays correct even if the
+ * environment variable is changed from the default "public/media".
+ */
+export function isLocalMediaPath(imagePath: string): boolean {
+  const prefix = MEDIA_DIR.startsWith("public/")
+    ? `/${MEDIA_DIR.slice("public/".length)}/`
+    : "/media/";
+  return imagePath.startsWith(prefix);
+}
+
+/**
  * Delete a locally stored image by its public path.
  */
 export async function deleteImage(publicPath: string): Promise<void> {
