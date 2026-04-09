@@ -12,6 +12,9 @@ RUN npm ci
 # Copy source
 COPY . .
 
+# Ensure public/ exists even when .dockerignore excludes all its contents
+RUN mkdir -p public
+
 # Generate Prisma client and build Next.js
 RUN npx prisma generate && npm run build
 
