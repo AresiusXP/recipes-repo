@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as cheerio from "cheerio";
 
 // Mock global fetch
 const mockFetch = vi.fn();
