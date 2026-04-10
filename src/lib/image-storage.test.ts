@@ -20,6 +20,25 @@ vi.mock("uuid", () => ({
   v4: () => "test-uuid-1234",
 }));
 
+// Silence the logger during tests
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    child: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+    }),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+  },
+  serializeError: (e: unknown) => ({ message: e instanceof Error ? e.message : String(e) }),
+}));
+
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);

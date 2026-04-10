@@ -32,6 +32,11 @@ config:
   databaseUrl: "file:/app/data/recipes.db"
   # Gemini model to use for recipe extraction
   geminiModel: "gemini-2.0-flash"
+  # Structured log level emitted to stdout (trace | debug | info | warn | error | fatal)
+  # Loki scrapes container stdout; use "info" in production, "debug" for troubleshooting.
+  logLevel: "info"
+  # Application name embedded in every log line (useful for multi-app Loki setups)
+  appName: "recipes-repo"
 
 # Secret references — these must exist in the cluster
 # Create them with:

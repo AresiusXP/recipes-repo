@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { revalidatePath } from "next/cache";
 import { saveUploadedImage, deleteImage, isLocalMediaPath } from "@/lib/image-storage";
+import { logger, serializeError } from "@/lib/logger";
 import { cache } from "react";
 
 // ─── Types ───
@@ -58,18 +59,25 @@ export async function uploadProfileImage(
   formData: FormData
 ): Promise<{ success: boolean; error?: string; image?: string }> {
   const session = await requireAuth();
+  const log = logger.child({ action: "uploadProfileImage", userId: session.user.id });
+
+  log.info("Profile image upload started");
 
   try {
     const file = formData.get("image");
 
     if (!file || !(file instanceof File) || file.size === 0) {
+      log.warn("Profile image upload rejected: no file provided or empty file");
       return { success: false, error: "No image file provided" };
     }
+
+    log.debug({ fileSize: file.size, fileType: file.type }, "Saving uploaded profile image");
 
     // Save the uploaded file
     const newImagePath = await saveUploadedImage(file);
 
     if (!newImagePath) {
+      log.warn({ fileSize: file.size, fileType: file.type }, "Profile image save failed: unsupported type or size limit exceeded");
       return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
     }
 
@@ -87,13 +95,17 @@ export async function uploadProfileImage(
 
     // Delete old local image if it exists
     if (currentUser?.image && isLocalMediaPath(currentUser.image)) {
+      log.debug({ oldImagePath: currentUser.image }, "Deleting old local profile image");
       await deleteImage(currentUser.image);
     }
+
+    log.info({ newImagePath }, "Profile image uploaded successfully");
 
     revalidatePath("/", "layout");
     return { success: true, image: newImagePath };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to upload profile image";
+    log.error({ err: serializeError(error) }, "Unexpected error during profile image upload");
     return { success: false, error: message };
   }
 }
@@ -102,6 +114,9 @@ export async function uploadProfileImage(
 
 export async function removeProfileImage(): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
+  const log = logger.child({ action: "removeProfileImage", userId: session.user.id });
+
+  log.info("Profile image removal started");
 
   try {
     // Get the current image to clean up
@@ -118,13 +133,17 @@ export async function removeProfileImage(): Promise<{ success: boolean; error?: 
 
     // Delete old local image if it exists
     if (currentUser?.image && isLocalMediaPath(currentUser.image)) {
+      log.debug({ imagePath: currentUser.image }, "Deleting local profile image file");
       await deleteImage(currentUser.image);
     }
+
+    log.info({ hadLocalImage: !!(currentUser?.image && isLocalMediaPath(currentUser.image)) }, "Profile image removed successfully");
 
     revalidatePath("/", "layout");
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to remove profile image";
+    log.error({ err: serializeError(error) }, "Unexpected error during profile image removal");
     return { success: false, error: message };
   }
 }
@@ -135,6 +154,9 @@ export async function updateUserSettings(
   data: { name?: string; translateRecipes?: boolean; themePreference?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
+  const log = logger.child({ action: "updateUserSettings", userId: session.user.id });
+
+  log.info({ fields: Object.keys(data) }, "User settings update started");
 
   try {
     const updateData: Record<string, unknown> = {};
@@ -152,6 +174,7 @@ export async function updateUserSettings(
     }
 
     if (Object.keys(updateData).length === 0) {
+      log.debug("No valid fields to update; skipping database write");
       return { success: true };
     }
 
@@ -160,10 +183,13 @@ export async function updateUserSettings(
       data: updateData,
     });
 
+    log.info({ updatedFields: Object.keys(updateData) }, "User settings updated successfully");
+
     revalidatePath("/", "layout");
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update settings";
+    log.error({ err: serializeError(error) }, "Unexpected error during user settings update");
     return { success: false, error: message };
   }
 }

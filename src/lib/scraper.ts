@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { logger } from "@/lib/logger";
 
 export interface ScrapedPage {
   title: string;
@@ -10,6 +11,10 @@ export interface ScrapedPage {
  * Fetches a web page and extracts the main text content and best image.
  */
 export async function scrapePage(url: string): Promise<ScrapedPage> {
+  const log = logger.child({ component: "scraper", url });
+
+  log.debug("Fetching page");
+
   const response = await fetch(url, {
     headers: {
       "User-Agent":
@@ -20,6 +25,7 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
   });
 
   if (!response.ok) {
+    log.warn({ status: response.status, statusText: response.statusText }, "Page fetch returned non-OK status");
     throw new Error(`Failed to fetch page: ${response.status} ${response.statusText}`);
   }
 
@@ -28,12 +34,14 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 
   // Extract JSON-LD structured data before removing scripts
   let content = "";
+  let foundJsonLd = false;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
       const data = JSON.parse($(el).text());
       const recipes = findRecipeJsonLd(data);
       if (recipes.length > 0) {
         content = JSON.stringify(recipes[0], null, 2);
+        foundJsonLd = true;
       }
     } catch {
       // ignore malformed JSON-LD
@@ -81,6 +89,17 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 
   // Clean up whitespace
   content = content.replace(/\s+/g, " ").trim();
+
+  log.info(
+    {
+      status: response.status,
+      contentLength: content.length,
+      hasImage: !!imageUrl,
+      usedJsonLd: foundJsonLd,
+      title: title.trim().slice(0, 100),
+    },
+    "Page scraped successfully"
+  );
 
   return {
     title: title.trim(),

@@ -8,6 +8,25 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
+// Silence the logger during tests
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    child: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+    }),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+  },
+  serializeError: (e: unknown) => ({ message: e instanceof Error ? e.message : String(e) }),
+}));
+
 import { GET } from "@/app/media/[filename]/route";
 
 describe("GET /media/[filename]", () => {

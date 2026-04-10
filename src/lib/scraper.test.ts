@@ -4,6 +4,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+// Silence the logger during tests
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    child: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+    }),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+  },
+  serializeError: (e: unknown) => ({ message: e instanceof Error ? e.message : String(e) }),
+}));
+
 import { scrapePage } from "@/lib/scraper";
 
 function makeHtml(body: string, head = ""): string {

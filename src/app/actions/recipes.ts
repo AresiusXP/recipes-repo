@@ -5,8 +5,10 @@ import { requireAuth } from "@/lib/require-auth";
 import { scrapePage } from "@/lib/scraper";
 import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
 import { downloadImage, deleteImage } from "@/lib/image-storage";
+import { logger, serializeError } from "@/lib/logger";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { randomUUID } from "crypto";
 
 // ─── Types ───
 
@@ -39,11 +41,16 @@ export interface RecipeFormData {
 
 export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
   const session = await requireAuth();
+  const operationId = randomUUID();
+  const log = logger.child({ action: "importRecipeFromUrl", operationId, userId: session.user.id });
+
+  log.info({ url }, "Recipe import from URL started");
 
   try {
     // Validate URL
     new URL(url);
   } catch {
+    log.warn({ url }, "Recipe import rejected: invalid URL");
     return { success: false, error: "Invalid URL provided" };
   }
 
@@ -58,9 +65,12 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     // Scrape the page
     let scraped;
     try {
+      log.debug({ url }, "Scraping page");
       scraped = await scrapePage(url);
+      log.debug({ url, contentLength: scraped.content.length, hasImage: !!scraped.imageUrl }, "Page scraped successfully");
     } catch (scrapeError) {
       const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
+      log.warn({ url, err: serializeError(scrapeError) }, "Page scraping failed");
       return {
         success: false,
         error: `Could not fetch the page: ${msg}. Try pasting the recipe text manually.`,
@@ -70,9 +80,12 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     // Extract recipe with Gemini
     let recipe;
     try {
+      log.debug({ url, translateToEnglish }, "Extracting recipe with Gemini");
       recipe = await extractRecipeWithGemini(scraped.content, url, { translateToEnglish });
+      log.debug({ url, detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
     } catch (aiError) {
       const msg = aiError instanceof Error ? aiError.message : "Unknown error";
+      log.warn({ url, err: serializeError(aiError) }, "Gemini recipe extraction failed");
       return {
         success: false,
         error: `Could not extract a recipe from this page: ${msg}. Try pasting the recipe text manually.`,
@@ -91,7 +104,7 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       }
       imagePath = await downloadImage(absoluteImageUrl);
       if (!imagePath) {
-        console.warn(`Image download returned null for URL: ${absoluteImageUrl}`);
+        log.warn({ url, imageUrl: absoluteImageUrl }, "Image download returned null; continuing without image");
       }
     }
 
@@ -131,10 +144,23 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       },
     });
 
+    log.info(
+      {
+        recipeId: created.id,
+        url,
+        title: recipe.title,
+        detectedLanguage: recipe.detectedLanguage,
+        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        hasImage: !!imagePath,
+      },
+      "Recipe imported successfully from URL"
+    );
+
     revalidatePath("/recipes");
     return { success: true, recipeId: created.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to import recipe";
+    log.error({ url, err: serializeError(error) }, "Unexpected error during recipe import from URL");
     return { success: false, error: message };
   }
 }
@@ -146,8 +172,13 @@ export async function importRecipeFromText(
   sourceUrl?: string
 ): Promise<ImportResult> {
   const session = await requireAuth();
+  const operationId = randomUUID();
+  const log = logger.child({ action: "importRecipeFromText", operationId, userId: session.user.id });
+
+  log.info({ textLength: text.length, hasSourceUrl: !!sourceUrl }, "Recipe import from text started");
 
   if (!text.trim()) {
+    log.warn("Recipe import rejected: empty text");
     return { success: false, error: "Recipe text cannot be empty" };
   }
 
@@ -159,11 +190,13 @@ export async function importRecipeFromText(
     });
     const translateToEnglish = user?.translateRecipes ?? true;
 
+    log.debug({ translateToEnglish }, "Extracting recipe from text with Gemini");
     const recipe = await extractRecipeWithGemini(
       text,
       sourceUrl || "manual entry",
       { translateToEnglish }
     );
+    log.debug({ detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
 
     const tagRecords = await Promise.all(
       recipe.tags.map(async (name) => {
@@ -199,10 +232,21 @@ export async function importRecipeFromText(
       },
     });
 
+    log.info(
+      {
+        recipeId: created.id,
+        title: recipe.title,
+        detectedLanguage: recipe.detectedLanguage,
+        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+      },
+      "Recipe imported successfully from text"
+    );
+
     revalidatePath("/recipes");
     return { success: true, recipeId: created.id };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to process recipe";
+    log.error({ err: serializeError(error) }, "Unexpected error during recipe import from text");
     return { success: false, error: message };
   }
 }
@@ -213,6 +257,10 @@ export async function translateRecipe(
   recipeId: string
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
+  const operationId = randomUUID();
+  const log = logger.child({ action: "translateRecipe", operationId, recipeId, userId: session.user.id });
+
+  log.info("Recipe translation started");
 
   const recipe = await prisma.recipe.findUnique({
     where: { id: recipeId },
@@ -228,15 +276,18 @@ export async function translateRecipe(
   });
 
   if (!recipe || recipe.userId !== session.user.id) {
+    log.warn("Translation rejected: recipe not found or ownership mismatch");
     return { success: false, error: "Recipe not found" };
   }
 
   if (recipe.isTranslatedToEnglish) {
+    log.info("Translation skipped: recipe is already translated to English");
     return { success: true }; // Already translated
   }
 
   if (recipe.sourceLanguage === "en") {
     // Already in English, just mark it
+    log.info({ sourceLanguage: recipe.sourceLanguage }, "Translation skipped: recipe source language is English; marking as translated");
     await prisma.recipe.update({
       where: { id: recipeId },
       data: { isTranslatedToEnglish: true },
@@ -247,6 +298,7 @@ export async function translateRecipe(
   }
 
   try {
+    log.debug({ sourceLanguage: recipe.sourceLanguage }, "Translating recipe content with Gemini");
     const ingredients: string[] = JSON.parse(recipe.ingredients);
     const steps: string[] = JSON.parse(recipe.steps);
 
@@ -268,11 +320,14 @@ export async function translateRecipe(
       },
     });
 
+    log.info({ sourceLanguage: recipe.sourceLanguage }, "Recipe translated to English successfully");
+
     revalidatePath("/recipes");
     revalidatePath(`/recipes/${recipeId}`);
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to translate recipe";
+    log.error({ err: serializeError(error) }, "Unexpected error during recipe translation");
     return { success: false, error: message };
   }
 }
@@ -284,6 +339,10 @@ export async function updateRecipe(
   data: RecipeFormData
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
+  const operationId = randomUUID();
+  const log = logger.child({ action: "updateRecipe", operationId, recipeId, userId: session.user.id });
+
+  log.info("Recipe update started");
 
   // Verify ownership
   const existing = await prisma.recipe.findUnique({
@@ -292,6 +351,7 @@ export async function updateRecipe(
   });
 
   if (!existing || existing.userId !== session.user.id) {
+    log.warn("Update rejected: recipe not found or ownership mismatch");
     return { success: false, error: "Recipe not found" };
   }
 
@@ -328,11 +388,14 @@ export async function updateRecipe(
       }),
     ]);
 
+    log.info({ tagCount: tagRecords.length }, "Recipe updated successfully");
+
     revalidatePath("/recipes");
     revalidatePath(`/recipes/${recipeId}`);
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update recipe";
+    log.error({ err: serializeError(error) }, "Unexpected error during recipe update");
     return { success: false, error: message };
   }
 }
@@ -341,6 +404,9 @@ export async function updateRecipe(
 
 export async function deleteRecipe(recipeId: string): Promise<void> {
   const session = await requireAuth();
+  const log = logger.child({ action: "deleteRecipe", recipeId, userId: session.user.id });
+
+  log.info("Recipe deletion started");
 
   const recipe = await prisma.recipe.findUnique({
     where: { id: recipeId },
@@ -348,17 +414,21 @@ export async function deleteRecipe(recipeId: string): Promise<void> {
   });
 
   if (!recipe || recipe.userId !== session.user.id) {
+    log.warn("Deletion rejected: recipe not found or ownership mismatch");
     return;
   }
 
   // Delete the image file if it exists
   if (recipe.imagePath) {
+    log.debug({ imagePath: recipe.imagePath }, "Deleting recipe image file");
     await deleteImage(recipe.imagePath);
   }
 
   await prisma.recipe.delete({
     where: { id: recipeId },
   });
+
+  log.info({ hadImage: !!recipe.imagePath }, "Recipe deleted successfully");
 
   revalidatePath("/recipes");
   redirect("/recipes");
@@ -370,6 +440,7 @@ export async function toggleFavorite(
   recipeId: string
 ): Promise<{ success: boolean; isFavorite?: boolean; error?: string }> {
   const session = await requireAuth();
+  const log = logger.child({ action: "toggleFavorite", recipeId, userId: session.user.id });
 
   const recipe = await prisma.recipe.findUnique({
     where: { id: recipeId },
@@ -377,6 +448,7 @@ export async function toggleFavorite(
   });
 
   if (!recipe || recipe.userId !== session.user.id) {
+    log.warn("Toggle favorite rejected: recipe not found or ownership mismatch");
     return { success: false, error: "Recipe not found" };
   }
 
@@ -385,6 +457,8 @@ export async function toggleFavorite(
     data: { isFavorite: !recipe.isFavorite },
     select: { isFavorite: true },
   });
+
+  log.info({ isFavorite: updated.isFavorite }, "Recipe favorite status toggled");
 
   revalidatePath("/recipes");
   revalidatePath(`/recipes/${recipeId}`);

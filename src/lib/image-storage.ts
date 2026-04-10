@@ -1,10 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import { logger, serializeError } from "@/lib/logger";
 
 const MEDIA_DIR = process.env.MEDIA_DIR || "public/media";
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+
+const log = logger.child({ component: "image-storage" });
 
 /**
  * Downloads an image from a URL and saves it locally.
@@ -17,8 +20,11 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
 
     // Only allow http(s)
     if (!["http:", "https:"].includes(url.protocol)) {
+      log.warn({ imageUrl, protocol: url.protocol }, "Image download rejected: unsupported protocol");
       return null;
     }
+
+    log.debug({ imageUrl }, "Downloading image");
 
     const response = await fetch(url.toString(), {
       headers: {
@@ -29,7 +35,7 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
     });
 
     if (!response.ok) {
-      console.error(`Failed to download image: ${response.status}`);
+      log.warn({ imageUrl, status: response.status }, "Image download returned non-OK status");
       return null;
     }
 
@@ -38,14 +44,14 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
     const mimeType = contentType.split(";")[0].trim().toLowerCase();
 
     if (!ALLOWED_TYPES.includes(mimeType)) {
-      console.error(`Unsupported image type: ${mimeType}`);
+      log.warn({ imageUrl, mimeType }, "Image download rejected: unsupported MIME type");
       return null;
     }
 
     // Validate content length
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
     if (contentLength > MAX_SIZE) {
-      console.error(`Image too large: ${contentLength} bytes`);
+      log.warn({ imageUrl, contentLength, maxSize: MAX_SIZE }, "Image download rejected: content-length exceeds limit");
       return null;
     }
 
@@ -53,7 +59,7 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
 
     // Double-check actual size
     if (buffer.length > MAX_SIZE) {
-      console.error(`Image too large after download: ${buffer.length} bytes`);
+      log.warn({ imageUrl, actualSize: buffer.length, maxSize: MAX_SIZE }, "Image download rejected: actual size exceeds limit");
       return null;
     }
 
@@ -84,9 +90,11 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
       ? `/${MEDIA_DIR.slice("public/".length)}/${filename}`
       : `/media/${filename}`;
 
+    log.info({ imageUrl, publicPath, size: buffer.length, mimeType }, "Image downloaded and saved successfully");
+
     return publicPath;
   } catch (error) {
-    console.error("Failed to download image:", error);
+    log.error({ imageUrl, err: serializeError(error) }, "Failed to download image");
     return null;
   }
 }
@@ -99,13 +107,13 @@ export async function saveUploadedImage(file: File): Promise<string | null> {
   try {
     // Validate MIME type
     if (!ALLOWED_TYPES.includes(file.type)) {
-      console.error(`Unsupported image type: ${file.type}`);
+      log.warn({ fileType: file.type }, "Uploaded image rejected: unsupported MIME type");
       return null;
     }
 
     // Validate size
     if (file.size > MAX_SIZE) {
-      console.error(`Image too large: ${file.size} bytes`);
+      log.warn({ fileSize: file.size, maxSize: MAX_SIZE }, "Uploaded image rejected: file size exceeds limit");
       return null;
     }
 
@@ -113,7 +121,7 @@ export async function saveUploadedImage(file: File): Promise<string | null> {
 
     // Double-check actual size
     if (buffer.length > MAX_SIZE) {
-      console.error(`Image too large after reading: ${buffer.length} bytes`);
+      log.warn({ actualSize: buffer.length, maxSize: MAX_SIZE }, "Uploaded image rejected: actual buffer size exceeds limit");
       return null;
     }
 
@@ -143,9 +151,11 @@ export async function saveUploadedImage(file: File): Promise<string | null> {
       ? `/${MEDIA_DIR.slice("public/".length)}/${filename}`
       : `/media/${filename}`;
 
+    log.info({ publicPath, size: buffer.length, mimeType: file.type }, "Uploaded image saved successfully");
+
     return publicPath;
   } catch (error) {
-    console.error("Failed to save uploaded image:", error);
+    log.error({ err: serializeError(error) }, "Failed to save uploaded image");
     return null;
   }
 }
@@ -174,12 +184,13 @@ export async function deleteImage(publicPath: string): Promise<void> {
 
     // Security: ensure the resolved path is inside the media directory
     if (!filePath.startsWith(absoluteMediaDir)) {
-      console.error("Attempted path traversal in deleteImage");
+      log.error({ publicPath, filePath }, "Attempted path traversal in deleteImage — request blocked");
       return;
     }
 
     await fs.unlink(filePath);
+    log.debug({ publicPath }, "Image file deleted");
   } catch (error) {
-    console.error("Failed to delete image:", error);
+    log.error({ publicPath, err: serializeError(error) }, "Failed to delete image file");
   }
 }

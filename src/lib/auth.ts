@@ -2,6 +2,9 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+
+const log = logger.child({ component: "auth" });
 
 /**
  * Parse the ALLOWED_EMAILS env var into a Set of lowercase emails.
@@ -30,25 +33,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user }) {
       const email = user.email?.toLowerCase();
-      if (!email) return false;
+      if (!email) {
+        log.warn("Sign-in rejected: no email provided by provider");
+        return false;
+      }
 
       // Existing users can always sign in
       const existingUser = await prisma.user.findUnique({
         where: { email },
         select: { id: true },
       });
-      if (existingUser) return true;
+      if (existingUser) {
+        log.info({ userId: existingUser.id }, "Existing user signed in");
+        return true;
+      }
 
       // New user — check the allowlist
       const allowedEmails = getAllowedEmails();
 
       // No allowlist configured → open registration
-      if (!allowedEmails) return true;
+      if (!allowedEmails) {
+        log.info("New user registered (open registration — no allowlist configured)");
+        return true;
+      }
 
       // Email is on the allowlist → allow registration
-      if (allowedEmails.has(email)) return true;
+      if (allowedEmails.has(email)) {
+        log.info("New user registered (email matched allowlist)");
+        return true;
+      }
 
       // Blocked — redirect to login with an error
+      log.warn("Sign-in rejected: email not on allowlist");
       return "/login?error=RegistrationNotAllowed";
     },
     session({ session, user }) {

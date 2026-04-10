@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { logger, serializeError } from "@/lib/logger";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -28,6 +29,13 @@ export async function extractRecipeWithGemini(
   sourceUrl: string,
   options: ExtractRecipeOptions = { translateToEnglish: true }
 ): Promise<GeminiRecipeResult> {
+  const log = logger.child({ component: "gemini", operation: "extractRecipe", model: GEMINI_MODEL });
+
+  log.debug(
+    { sourceUrl, contentLength: pageContent.length, translateToEnglish: options.translateToEnglish },
+    "Calling Gemini for recipe extraction"
+  );
+
   const model = genAI.getGenerativeModel({
     model: GEMINI_MODEL,
     generationConfig: { responseMimeType: "application/json" },
@@ -61,31 +69,53 @@ Source URL: ${sourceUrl}
 Page content:
 ${pageContent.slice(0, 30000)}`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const text = response.text().trim();
+  try {
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text().trim();
 
-  // Strip markdown code blocks if present
-  const jsonStr = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+    // Strip markdown code blocks if present
+    const jsonStr = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
 
-  const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
 
-  if (parsed.error) {
-    throw new Error(parsed.error);
+    if (parsed.error) {
+      log.warn({ sourceUrl, geminiError: parsed.error }, "Gemini reported it could not extract a recipe");
+      throw new Error(parsed.error);
+    }
+
+    const extracted: GeminiRecipeResult = {
+      title: parsed.title || "Untitled Recipe",
+      description: parsed.description || "",
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
+      steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags.map((t: string) => t.toLowerCase().trim())
+        : [],
+      detectedLanguage: typeof parsed.detectedLanguage === "string"
+        ? parsed.detectedLanguage.toLowerCase().trim().slice(0, 2)
+        : "en",
+    };
+
+    log.info(
+      {
+        sourceUrl,
+        detectedLanguage: extracted.detectedLanguage,
+        ingredientCount: extracted.ingredients.length,
+        stepCount: extracted.steps.length,
+        tagCount: extracted.tags.length,
+      },
+      "Gemini recipe extraction succeeded"
+    );
+
+    return extracted;
+  } catch (error) {
+    // Only log as error if it's not the expected "could not extract" case (already warned above)
+    if (!(error instanceof Error && error.message.startsWith("Could not extract"))) {
+      log.error({ sourceUrl, err: serializeError(error) }, "Gemini recipe extraction failed unexpectedly");
+    }
+    throw error;
   }
-
-  return {
-    title: parsed.title || "Untitled Recipe",
-    description: parsed.description || "",
-    ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
-    steps: Array.isArray(parsed.steps) ? parsed.steps : [],
-    tags: Array.isArray(parsed.tags)
-      ? parsed.tags.map((t: string) => t.toLowerCase().trim())
-      : [],
-    detectedLanguage: typeof parsed.detectedLanguage === "string"
-      ? parsed.detectedLanguage.toLowerCase().trim().slice(0, 2)
-      : "en",
-  };
 }
 
 /**
@@ -103,6 +133,13 @@ export async function translateRecipeWithGemini(recipe: {
   ingredients: string[];
   steps: string[];
 }> {
+  const log = logger.child({ component: "gemini", operation: "translateRecipe", model: GEMINI_MODEL });
+
+  log.debug(
+    { ingredientCount: recipe.ingredients.length, stepCount: recipe.steps.length },
+    "Calling Gemini for recipe translation"
+  );
+
   const model = genAI.getGenerativeModel({
     model: GEMINI_MODEL,
     generationConfig: { responseMimeType: "application/json" },
@@ -131,18 +168,30 @@ ${JSON.stringify({
     steps: recipe.steps,
   })}`;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const text = response.text().trim();
+  try {
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text().trim();
 
-  const jsonStr = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+    const jsonStr = text.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
 
-  const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
 
-  return {
-    title: parsed.title ?? recipe.title,
-    description: parsed.description ?? recipe.description,
-    ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : recipe.ingredients,
-    steps: Array.isArray(parsed.steps) ? parsed.steps : recipe.steps,
-  };
+    const translated = {
+      title: parsed.title ?? recipe.title,
+      description: parsed.description ?? recipe.description,
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : recipe.ingredients,
+      steps: Array.isArray(parsed.steps) ? parsed.steps : recipe.steps,
+    };
+
+    log.info(
+      { ingredientCount: translated.ingredients.length, stepCount: translated.steps.length },
+      "Gemini recipe translation succeeded"
+    );
+
+    return translated;
+  } catch (error) {
+    log.error({ err: serializeError(error) }, "Gemini recipe translation failed");
+    throw error;
+  }
 }

@@ -41,6 +41,25 @@ vi.mock("@/lib/image-storage", () => ({
   isLocalMediaPath: (...args: unknown[]) => mockIsLocalMediaPath(...args),
 }));
 
+// Silence the logger during tests
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    child: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      trace: vi.fn(),
+    }),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+  },
+  serializeError: (e: unknown) => ({ message: e instanceof Error ? e.message : String(e) }),
+}));
+
 import {
   getUserSettings,
   uploadProfileImage,

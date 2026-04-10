@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import { logger, serializeError } from "@/lib/logger";
 
 const MEDIA_DIR = process.env.MEDIA_DIR || "public/media";
 
@@ -10,6 +11,8 @@ const MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
 };
+
+const log = logger.child({ component: "media-route" });
 
 /**
  * Serves images from the runtime media directory.
@@ -59,10 +62,15 @@ export async function GET(
       },
     });
   } catch (error) {
-    // Log unexpected errors (permission issues, etc.) but not missing files
-    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.error(`Failed to serve media file "${filename}":`, error);
+    // Expected case: file simply does not exist (ENOENT) — return 404 silently
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return new Response("Not Found", { status: 404 });
     }
+    // Unexpected error (permission issues, I/O errors, etc.) — log for troubleshooting
+    log.error(
+      { filename, err: serializeError(error) },
+      "Unexpected error serving media file"
+    );
     return new Response("Not Found", { status: 404 });
   }
 }

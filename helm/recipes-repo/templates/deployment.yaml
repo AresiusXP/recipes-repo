@@ -79,6 +79,10 @@ spec:
                   key: {{ .Values.secrets.keys.geminiApiKey }}
             - name: GEMINI_MODEL
               value: {{ .Values.config.geminiModel | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | default "info" | quote }}
+            - name: APP_NAME
+              value: {{ .Values.config.appName | default "recipes-repo" | quote }}
           volumeMounts:
             - name: data
               mountPath: /app/data
