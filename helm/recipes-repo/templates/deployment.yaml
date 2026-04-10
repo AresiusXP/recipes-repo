@@ -84,7 +84,7 @@ spec:
               mountPath: /app/data
             {{- if .Values.persistence.media.enabled }}
             - name: media
-              mountPath: /app/public/media
+              mountPath: /app/media
             {{- end }}
           {{- with .Values.probes.liveness }}
           livenessProbe:

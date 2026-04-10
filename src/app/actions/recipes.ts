@@ -90,6 +90,9 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
         // keep as-is if already absolute
       }
       imagePath = await downloadImage(absoluteImageUrl);
+      if (!imagePath) {
+        console.warn(`Image download returned null for URL: ${absoluteImageUrl}`);
+      }
     }
 
     // Create tags

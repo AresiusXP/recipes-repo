@@ -27,7 +27,7 @@ config:
   # AUTH_TRUST_HOST is always set to "true" to support reverse-proxy deployments.
   nextauthUrl: "https://recipes.example.com"
   # Directory for recipe images inside the container
-  mediaDir: "public/media"
+  mediaDir: "media"
   # SQLite database path inside the container
   databaseUrl: "file:/app/data/recipes.db"
   # Gemini model to use for recipe extraction

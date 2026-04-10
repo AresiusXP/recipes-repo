@@ -70,12 +70,12 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY docker-entrypoint.sh ./
 
 # Create data and media directories with correct permissions
-RUN mkdir -p /app/public/media /app/data && \
-    chown -R nextjs:nodejs /app/public/media /app/data
+RUN mkdir -p /app/media /app/data && \
+    chown -R nextjs:nodejs /app/media /app/data
 
 # Default environment
 ENV DATABASE_URL="file:/app/data/recipes.db"
-ENV MEDIA_DIR="public/media"
+ENV MEDIA_DIR="media"
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
