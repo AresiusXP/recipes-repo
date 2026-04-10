@@ -6,6 +6,9 @@ import Link from "next/link";
 import { searchRecipes } from "@/app/actions/recipes";
 import { FavoriteButton } from "@/components/FavoriteButton";
 
+type ViewMode = "grid" | "list";
+const VIEW_MODE_KEY = "recipes:view-mode";
+
 interface RecipeSummary {
   id: string;
   title: string;
@@ -35,6 +38,31 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
   );
   const [loading, setLoading] = useState(false);
   const [showTags, setShowTags] = useState(false);
+
+  // View mode — default to grid; read persisted preference after mount to avoid hydration mismatch
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    try {
+      const saved = localStorage.getItem(VIEW_MODE_KEY);
+      if (saved === "list" || saved === "grid") {
+        setViewMode(saved);
+      }
+    } catch {
+      // localStorage not available (e.g. SSR or private mode); keep default
+    }
+  }, []);
+
+  function handleSetViewMode(mode: ViewMode) {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // ignore write errors
+    }
+  }
 
   const loadRecipes = useCallback(async () => {
     setLoading(true);
@@ -75,6 +103,10 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
     );
   }
 
+  // Determine effective view mode: during SSR / before mount always use grid
+  // so the server-rendered HTML matches the initial client render.
+  const effectiveView: ViewMode = isMounted ? viewMode : "grid";
+
   return (
     <div>
       {/* Search and filter header */}
@@ -103,6 +135,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
               className="w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
             />
           </div>
+
           {allTags.length > 0 && (
             <button
               onClick={() => setShowTags(!showTags)}
@@ -132,6 +165,54 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
               )}
             </button>
           )}
+
+          {/* View mode toggle */}
+          <div className="flex items-center rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-800">
+            {/* Grid view button */}
+            <button
+              onClick={() => handleSetViewMode("grid")}
+              aria-label="Grid view"
+              aria-pressed={effectiveView === "grid"}
+              className={`rounded-md p-1.5 transition-colors ${
+                effectiveView === "grid"
+                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+            </button>
+            {/* List view button */}
+            <button
+              onClick={() => handleSetViewMode("list")}
+              aria-label="List view"
+              aria-pressed={effectiveView === "list"}
+              className={`rounded-md p-1.5 transition-colors ${
+                effectiveView === "list"
+                  ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+              }`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Tag filter chips */}
@@ -162,7 +243,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
         )}
       </div>
 
-      {/* Recipe grid */}
+      {/* Recipe list / grid */}
       {loading ? (
         <div className="flex items-center justify-center py-16">
           <svg
@@ -207,14 +288,15 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
             </Link>
           )}
         </div>
-      ) : (
+      ) : effectiveView === "grid" ? (
+        /* ── Grid view ── */
         <div className="grid gap-4 sm:grid-cols-2">
           {recipes.map((recipe) => (
-            <Link
+            <div
               key={recipe.id}
-              href={`/recipes/${recipe.id}`}
               className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
             >
+              {/* Favorite button sits above the link, outside it */}
               <div className="absolute right-2 top-2 z-10">
                 <FavoriteButton
                   recipeId={recipe.id}
@@ -227,44 +309,136 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
                   }}
                 />
               </div>
-              {recipe.imagePath && (
-                <div className="aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={recipe.imagePath}
-                    alt={recipe.title}
-                    className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                  />
-                </div>
-              )}
-              <div className="p-4">
-                <h2 className="font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
-                  {recipe.title}
-                </h2>
-                {recipe.description && (
-                  <p className="mt-1 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">
-                    {recipe.description}
-                  </p>
-                )}
-                {recipe.tags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {recipe.tags.slice(0, 4).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {recipe.tags.length > 4 && (
-                      <span className="text-xs text-zinc-400">
-                        +{recipe.tags.length - 4} more
-                      </span>
-                    )}
+              <Link
+                href={`/recipes/${recipe.id}`}
+                className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                {recipe.imagePath && (
+                  <div className="aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={recipe.imagePath}
+                      alt={recipe.title}
+                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                    />
                   </div>
                 )}
+                <div className="p-4">
+                  <h2 className="font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
+                    {recipe.title}
+                  </h2>
+                  {recipe.description && (
+                    <p className="mt-1 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">
+                      {recipe.description}
+                    </p>
+                  )}
+                  {recipe.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {recipe.tags.slice(0, 4).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {recipe.tags.length > 4 && (
+                        <span className="text-xs text-zinc-400">
+                          +{recipe.tags.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Link>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* ── List view ── */
+        <div className="flex flex-col gap-2">
+          {recipes.map((recipe) => (
+            <div
+              key={recipe.id}
+              className="group relative flex items-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              <Link
+                href={`/recipes/${recipe.id}`}
+                className="flex min-w-0 flex-1 items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                {/* Thumbnail */}
+                <div className="h-16 w-16 shrink-0 overflow-hidden bg-zinc-100 dark:bg-zinc-800 sm:h-20 sm:w-20">
+                  {recipe.imagePath ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={recipe.imagePath}
+                      alt={recipe.title}
+                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-6 w-6 text-zinc-300 dark:text-zinc-600"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div className="min-w-0 flex-1 py-2">
+                  <h2 className="truncate font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
+                    {recipe.title}
+                  </h2>
+                  {recipe.description && (
+                    <p className="mt-0.5 line-clamp-1 text-sm text-zinc-500 dark:text-zinc-400">
+                      {recipe.description}
+                    </p>
+                  )}
+                  {recipe.tags.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {recipe.tags.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {recipe.tags.length > 3 && (
+                        <span className="text-xs text-zinc-400">
+                          +{recipe.tags.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </Link>
+
+              {/* Favorite button — outside the Link to avoid nested interactive elements */}
+              <div className="shrink-0 px-3">
+                <FavoriteButton
+                  recipeId={recipe.id}
+                  initialFavorite={recipe.isFavorite}
+                  compact
+                  onToggled={(isFav) => {
+                    if (favoritesOnly && !isFav) {
+                      setRecipes((prev) => prev.filter((r) => r.id !== recipe.id));
+                    }
+                  }}
+                />
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}
