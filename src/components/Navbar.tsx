@@ -11,7 +11,7 @@ export async function Navbar() {
       <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
         <Link
           href="/recipes"
-          className="flex items-center gap-2 text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+          className="flex items-center gap-2 font-serif text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
         >
             <img src="/favicon.ico" alt="Recipes" className="h-6 w-6" />
           <span className="hidden sm:inline">Recipes Repo</span>

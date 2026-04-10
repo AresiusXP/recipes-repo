@@ -16,13 +16,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const isRegistrationBlocked = error === "RegistrationNotAllowed";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-orange-50 to-white dark:from-zinc-900 dark:to-zinc-950 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-background dark:from-zinc-900 dark:to-background px-4">
+      <div className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-8 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             🍳 Recipes Repo
           </h1>
-          <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
             Sign in to manage your recipe collection
           </p>
         </div>

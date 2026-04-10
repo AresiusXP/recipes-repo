@@ -38,9 +38,9 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   return (
     <article className="mx-auto max-w-2xl">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-8">
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-3xl">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
             {recipe.title}
           </h1>
           <div className="flex shrink-0 items-center gap-2">
@@ -105,17 +105,17 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
       )}
 
       {/* Ingredients */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <section className="mb-10">
+        <h2 className="mb-5 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           Ingredients
         </h2>
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {ingredients.map((ingredient, i) => (
             <li
               key={i}
-              className="flex items-start gap-3 text-sm text-zinc-700 dark:text-zinc-300"
+              className="flex items-start gap-3 text-base text-zinc-700 dark:text-zinc-300"
             >
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
               {ingredient}
             </li>
           ))}
@@ -123,17 +123,17 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
       </section>
 
       {/* Steps */}
-      <section className="mb-8">
-        <h2 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+      <section className="mb-10">
+        <h2 className="mb-5 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           Steps
         </h2>
-        <ol className="space-y-4">
+        <ol className="space-y-6">
           {steps.map((step, i) => (
-            <li key={i} className="flex gap-4 text-sm text-zinc-700 dark:text-zinc-300">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            <li key={i} className="flex gap-4 text-base text-zinc-700 dark:text-zinc-300">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                 {i + 1}
               </span>
-              <p className="pt-0.5">{step}</p>
+              <p className="pt-0.5 leading-relaxed">{step}</p>
             </li>
           ))}
         </ol>

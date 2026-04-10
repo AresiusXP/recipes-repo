@@ -31,7 +31,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
   const searchParams = useSearchParams();
 
   const [recipes, setRecipes] = useState<RecipeSummary[]>(initialRecipes);
-  const [allTags, setAllTags] = useState<string[]>(initialTags);
+  const [allTags] = useState<string[]>(initialTags);
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [selectedTags, setSelectedTags] = useState<string[]>(
     searchParams.get("tags")?.split(",").filter(Boolean) || []
@@ -95,7 +95,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, selectedTags, loadRecipes, router, isInitialRender]);
+  }, [query, selectedTags, loadRecipes, router, isInitialRender, favoritesOnly]);
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) =>
@@ -324,7 +324,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
                   </div>
                 )}
                 <div className="p-4">
-                  <h2 className="font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
+                  <h2 className="font-serif text-xl font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
                     {recipe.title}
                   </h2>
                   {recipe.description && (
@@ -397,7 +397,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
 
                 {/* Content */}
                 <div className="min-w-0 flex-1 py-2">
-                  <h2 className="truncate font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
+                  <h2 className="truncate font-serif text-lg font-semibold text-zinc-900 group-hover:text-primary dark:text-zinc-50">
                     {recipe.title}
                   </h2>
                   {recipe.description && (

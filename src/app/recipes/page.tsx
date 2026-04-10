@@ -20,7 +20,7 @@ export default async function RecipesPage({
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+      <h1 className="mb-6 font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
         My Recipes
       </h1>
       <RecipeList initialRecipes={initialRecipes} initialTags={initialTags} />

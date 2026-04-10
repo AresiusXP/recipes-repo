@@ -8,6 +8,7 @@ import {
   removeProfileImage,
   type UserSettings,
 } from "@/app/actions/user";
+import { applyTheme } from "@/lib/theme";
 
 interface SettingsFormProps {
   initialSettings: UserSettings;
@@ -17,6 +18,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialSettings.name || "");
   const [translateRecipes, setTranslateRecipes] = useState(initialSettings.translateRecipes);
+  const [themePreference, setThemePreference] = useState(initialSettings.themePreference);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -152,10 +154,14 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
       const result = await updateUserSettings({
         name,
         translateRecipes,
+        themePreference,
       });
 
       if (result.success) {
         setMessage({ type: "success", text: "Settings saved successfully" });
+        // Apply the new theme immediately on the client so the user sees the
+        // change without waiting for a full server round-trip.
+        applyTheme(themePreference);
         router.refresh();
       } else {
         setMessage({ type: "error", text: result.error || "Failed to save settings" });
@@ -289,6 +295,34 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             placeholder="Your name"
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
           />
+        </div>
+
+        {/* Theme Preference */}
+        <div>
+          <label className="mb-3 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Theme
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { id: "light", label: "Light", icon: "☀️" },
+              { id: "dark", label: "Dark", icon: "🌙" },
+              { id: "system", label: "System", icon: "💻" },
+            ].map((theme) => (
+              <button
+                key={theme.id}
+                type="button"
+                onClick={() => setThemePreference(theme.id)}
+                className={`flex flex-col items-center justify-center gap-2 rounded-xl border p-4 transition-all ${
+                  themePreference === theme.id
+                    ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <span className="text-2xl">{theme.icon}</span>
+                <span className="text-sm font-medium">{theme.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Translate Recipes Toggle */}

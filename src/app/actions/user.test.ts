@@ -64,6 +64,7 @@ describe("getUserSettings", () => {
       name: "Test User",
       image: "/media/avatar.jpg",
       translateRecipes: false,
+      themePreference: "dark",
     });
 
     const result = await getUserSettings();
@@ -72,6 +73,7 @@ describe("getUserSettings", () => {
       name: "Test User",
       image: "/media/avatar.jpg",
       translateRecipes: false,
+      themePreference: "dark",
     });
   });
 
@@ -84,6 +86,7 @@ describe("getUserSettings", () => {
       name: null,
       image: null,
       translateRecipes: true,
+      themePreference: "system",
     });
   });
 });
@@ -246,6 +249,27 @@ describe("updateUserSettings", () => {
       where: { id: "user-1" },
       data: { translateRecipes: false },
     });
+  });
+
+  it("updates themePreference", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    const result = await updateUserSettings({ themePreference: "dark" });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { themePreference: "dark" },
+    });
+  });
+
+  it("ignores invalid themePreference", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    const result = await updateUserSettings({ themePreference: "invalid" });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
   });
 
   it("returns success without updating when no valid fields provided", async () => {

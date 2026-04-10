@@ -44,6 +44,7 @@ model User {
   image         String?
 
   translateRecipes Boolean @default(true)
+  themePreference  String  @default("system") // "light", "dark", or "system"
 
   accounts Account[]
   sessions Session[]

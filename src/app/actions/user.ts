@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { revalidatePath } from "next/cache";
 import { saveUploadedImage, deleteImage, isLocalMediaPath } from "@/lib/image-storage";
+import { cache } from "react";
 
 // ─── Types ───
 
@@ -11,24 +12,45 @@ export interface UserSettings {
   name: string | null;
   image: string | null;
   translateRecipes: boolean;
+  themePreference: string;
 }
 
 // ─── Get user settings ───
 
-export async function getUserSettings(): Promise<UserSettings> {
+export const getUserSettings = cache(async (): Promise<UserSettings> => {
   const session = await requireAuth();
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { name: true, image: true, translateRecipes: true },
+    select: { name: true, image: true, translateRecipes: true, themePreference: true },
   });
 
   return {
     name: user?.name ?? null,
     image: user?.image ?? null,
     translateRecipes: user?.translateRecipes ?? true,
+    themePreference: user?.themePreference ?? "system",
   };
-}
+});
+
+// ─── Get theme preference safely ───
+
+export const getThemePreference = cache(async (): Promise<string> => {
+  try {
+    const { auth } = await import("@/lib/auth");
+    const session = await auth();
+    if (!session?.user?.id) return "system";
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { themePreference: true },
+    });
+
+    return user?.themePreference ?? "system";
+  } catch {
+    return "system";
+  }
+});
 
 // ─── Upload profile image ───
 
@@ -110,7 +132,7 @@ export async function removeProfileImage(): Promise<{ success: boolean; error?: 
 // ─── Update user settings ───
 
 export async function updateUserSettings(
-  data: { name?: string; translateRecipes?: boolean }
+  data: { name?: string; translateRecipes?: boolean; themePreference?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
 
@@ -125,6 +147,10 @@ export async function updateUserSettings(
       updateData.translateRecipes = data.translateRecipes;
     }
 
+    if (typeof data.themePreference === "string" && ["light", "dark", "system"].includes(data.themePreference)) {
+      updateData.themePreference = data.themePreference;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return { success: true };
     }
@@ -134,7 +160,7 @@ export async function updateUserSettings(
       data: updateData,
     });
 
-    revalidatePath("/settings");
+    revalidatePath("/", "layout");
     return { success: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update settings";
