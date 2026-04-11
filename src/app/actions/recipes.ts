@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { scrapePage } from "@/lib/scraper";
 import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
-import { downloadImage, deleteImage } from "@/lib/image-storage";
+import { downloadImage, deleteImage, duplicateImage } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -543,4 +543,151 @@ export async function getUserTags() {
   });
 
   return tags.map((t: { name: string }) => t.name);
+}
+
+// ─── List other users (for share picker) ───
+
+export interface ShareableUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+}
+
+export async function getOtherUsers(): Promise<ShareableUser[]> {
+  const session = await requireAuth();
+
+  const users = await prisma.user.findMany({
+    where: { id: { not: session.user.id } },
+    select: { id: true, name: true, email: true, image: true },
+    orderBy: { name: "asc" },
+  });
+
+  return users;
+}
+
+// ─── Share recipe ───
+
+export async function shareRecipe(
+  recipeId: string,
+  recipientUserId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await requireAuth();
+  const operationId = randomUUID();
+  const log = logger.child({ action: "shareRecipe", operationId, recipeId, userId: session.user.id, recipientUserId });
+
+  log.info("Recipe share started");
+
+  if (recipientUserId === session.user.id) {
+    log.warn("Share rejected: cannot share recipe with yourself");
+    return { success: false, error: "You cannot share a recipe with yourself." };
+  }
+
+  // Load source recipe, verify ownership
+  const source = await prisma.recipe.findUnique({
+    where: { id: recipeId },
+    include: { tags: { include: { tag: true } } },
+  });
+
+  if (!source || source.userId !== session.user.id) {
+    log.warn("Share rejected: recipe not found or ownership mismatch");
+    return { success: false, error: "Recipe not found." };
+  }
+
+  // Verify recipient exists
+  const recipient = await prisma.user.findUnique({
+    where: { id: recipientUserId },
+    select: { id: true, name: true },
+  });
+
+  if (!recipient) {
+    log.warn("Share rejected: recipient user not found");
+    return { success: false, error: "Recipient user not found." };
+  }
+
+  // Prevent sharing the same recipe to the same recipient more than once
+  const existingShare = await prisma.recipe.findFirst({
+    where: { userId: recipientUserId, sharedFromRecipeId: source.id },
+    select: { id: true },
+  });
+
+  if (existingShare) {
+    log.warn("Share rejected: recipe already shared with this recipient");
+    return { success: false, error: "You have already shared this recipe with that user." };
+  }
+
+  // Duplicate image so deletion of either copy doesn't affect the other
+  const copiedImagePath = source.imagePath
+    ? await duplicateImage(source.imagePath)
+    : null;
+
+  const tagNames = source.tags.map((rt: { tag: { name: string } }) => rt.tag.name);
+  const senderName = session.user.name ?? session.user.email ?? "Someone";
+
+  try {
+    // Upsert tags + create recipe copy + notification all in one transaction
+    const copied = await prisma.$transaction(async (tx) => {
+      // Upsert tags inside the transaction
+      const tagRecords = await Promise.all(
+        tagNames.map(async (name: string) => {
+          return tx.tag.upsert({
+            where: { name },
+            update: {},
+            create: { name },
+          });
+        })
+      );
+
+      const newRecipe = await tx.recipe.create({
+        data: {
+          title: source.title,
+          description: source.description,
+          sourceUrl: source.sourceUrl,
+          imagePath: copiedImagePath,
+          ingredients: source.ingredients,
+          steps: source.steps,
+          rawContent: source.rawContent,
+          sourceLanguage: source.sourceLanguage,
+          isTranslatedToEnglish: source.isTranslatedToEnglish,
+          isFavorite: false,
+          sharedByUserId: session.user.id,
+          sharedFromRecipeId: source.id,
+          userId: recipientUserId,
+          tags: {
+            create: tagRecords.map((tag: { id: string; name: string }) => ({
+              tagId: tag.id,
+            })),
+          },
+        },
+      });
+
+      await tx.notification.create({
+        data: {
+          type: "recipe_shared",
+          title: "Recipe shared with you",
+          message: `${senderName} shared "${source.title}" with you.`,
+          userId: recipientUserId,
+          senderUserId: session.user.id,
+          recipeId: newRecipe.id,
+        },
+      });
+
+      return newRecipe;
+    });
+
+    log.info({ copiedRecipeId: copied.id }, "Recipe shared successfully");
+
+    revalidatePath("/recipes");
+    revalidatePath("/notifications");
+
+    return { success: true };
+  } catch (error) {
+    // If the transaction failed and we already duplicated the image, clean it up
+    if (copiedImagePath && copiedImagePath !== source.imagePath) {
+      await deleteImage(copiedImagePath);
+    }
+    const message = error instanceof Error ? error.message : "Failed to share recipe";
+    log.error({ err: serializeError(error) }, "Unexpected error during recipe share");
+    return { success: false, error: message };
+  }
 }

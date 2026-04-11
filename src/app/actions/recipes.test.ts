@@ -11,15 +11,17 @@ const {
   mockTranslateRecipeWithGemini,
   mockDownloadImage,
   mockDeleteImage,
+  mockDuplicateImage,
 } = vi.hoisted(() => ({
   mockRedirect: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockRequireAuth: vi.fn(),
   mockPrisma: {
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findMany: vi.fn() },
     recipe: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
       findMany: vi.fn(),
@@ -29,6 +31,7 @@ const {
       findMany: vi.fn(),
     },
     recipeTag: { deleteMany: vi.fn() },
+    notification: { create: vi.fn() },
     $transaction: vi.fn(),
   },
   mockScrapePage: vi.fn(),
@@ -36,6 +39,7 @@ const {
   mockTranslateRecipeWithGemini: vi.fn(),
   mockDownloadImage: vi.fn(),
   mockDeleteImage: vi.fn(),
+  mockDuplicateImage: vi.fn(),
 }));
 
 // ─── Module mocks ───
@@ -70,6 +74,7 @@ vi.mock("@/lib/gemini", () => ({
 vi.mock("@/lib/image-storage", () => ({
   downloadImage: (...args: unknown[]) => mockDownloadImage(...args),
   deleteImage: (...args: unknown[]) => mockDeleteImage(...args),
+  duplicateImage: (...args: unknown[]) => mockDuplicateImage(...args),
 }));
 
 // Silence the logger during tests
@@ -100,6 +105,8 @@ import {
   toggleFavorite,
   searchRecipes,
   getUserTags,
+  getOtherUsers,
+  shareRecipe,
 } from "@/app/actions/recipes";
 
 const DEFAULT_SESSION = {
@@ -689,5 +696,198 @@ describe("getUserTags", () => {
     const result = await getUserTags();
 
     expect(result).toEqual([]);
+  });
+});
+
+describe("getOtherUsers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("returns users other than the current user", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      { id: "user-2", name: "Alice", email: "alice@example.com", image: null },
+      { id: "user-3", name: "Bob", email: "bob@example.com", image: null },
+    ]);
+
+    const result = await getOtherUsers();
+
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe("user-2");
+    expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { not: "user-1" } },
+      })
+    );
+  });
+
+  it("returns empty array when there are no other users", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([]);
+
+    const result = await getOtherUsers();
+
+    expect(result).toEqual([]);
+  });
+});
+
+describe("shareRecipe", () => {
+  const SOURCE_RECIPE = {
+    id: "recipe-1",
+    title: "Carbonara",
+    description: "Classic pasta",
+    sourceUrl: null,
+    imagePath: "/media/pasta.jpg",
+    ingredients: JSON.stringify(["pasta", "eggs"]),
+    steps: JSON.stringify(["boil", "mix"]),
+    rawContent: null,
+    sourceLanguage: "en",
+    isTranslatedToEnglish: true,
+    userId: "user-1",
+    tags: [{ tag: { name: "italian" } }, { tag: { name: "pasta" } }],
+  };
+
+  // Minimal transaction mock that runs the callback with a tx that has
+  // tag.upsert, recipe.create, and notification.create mocks.
+  function makeTxMock(
+    txRecipeCreate: ReturnType<typeof vi.fn>,
+    txNotificationCreate: ReturnType<typeof vi.fn>
+  ) {
+    return async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        tag: {
+          upsert: vi.fn().mockImplementation(({ where }: { where: { name: string } }) =>
+            Promise.resolve({ id: `tag-${where.name}`, name: where.name })
+          ),
+        },
+        recipe: { create: txRecipeCreate },
+        notification: { create: txNotificationCreate },
+      };
+      return fn(tx);
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+    // By default: no duplicate share exists
+    mockPrisma.recipe.findFirst.mockResolvedValue(null);
+    // By default: image duplication returns a new path
+    mockDuplicateImage.mockResolvedValue("/media/pasta-copy.jpg");
+  });
+
+  it("returns error when sharing with yourself", async () => {
+    const result = await shareRecipe("recipe-1", "user-1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("cannot share");
+    expect(mockPrisma.recipe.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns error when recipe not found", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(null);
+
+    const result = await shareRecipe("nonexistent-id", "user-2");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found.");
+  });
+
+  it("returns error when user does not own the recipe", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      ...SOURCE_RECIPE,
+      userId: "other-user",
+    });
+
+    const result = await shareRecipe("recipe-1", "user-2");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found.");
+  });
+
+  it("returns error when recipient does not exist", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(SOURCE_RECIPE);
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+
+    const result = await shareRecipe("recipe-1", "nonexistent-user");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipient user not found.");
+  });
+
+  it("returns error when recipe was already shared with this recipient", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(SOURCE_RECIPE);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-2", name: "Alice" });
+    // Simulate existing share
+    mockPrisma.recipe.findFirst.mockResolvedValue({ id: "existing-copy" });
+
+    const result = await shareRecipe("recipe-1", "user-2");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("already shared");
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("duplicates the image before creating the copy", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(SOURCE_RECIPE);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-2", name: "Alice" });
+
+    const createdRecipe = { id: "new-recipe-id" };
+    mockPrisma.$transaction.mockImplementation(
+      makeTxMock(
+        vi.fn().mockResolvedValue(createdRecipe),
+        vi.fn().mockResolvedValue({})
+      )
+    );
+
+    await shareRecipe("recipe-1", "user-2");
+
+    expect(mockDuplicateImage).toHaveBeenCalledWith("/media/pasta.jpg");
+  });
+
+  it("successfully shares a recipe and creates notification via transaction", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(SOURCE_RECIPE);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-2", name: "Alice" });
+
+    const createdRecipe = { id: "new-recipe-id" };
+    mockPrisma.$transaction.mockImplementation(
+      makeTxMock(
+        vi.fn().mockResolvedValue(createdRecipe),
+        vi.fn().mockResolvedValue({})
+      )
+    );
+
+    const result = await shareRecipe("recipe-1", "user-2");
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/recipes");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/notifications");
+  });
+
+  it("copies tag records and provenance to the new recipe inside the transaction", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(SOURCE_RECIPE);
+    mockPrisma.user.findUnique.mockResolvedValue({ id: "user-2", name: "Alice" });
+
+    const txRecipeCreate = vi.fn().mockResolvedValue({ id: "new-recipe-id" });
+    const txNotificationCreate = vi.fn().mockResolvedValue({});
+
+    mockPrisma.$transaction.mockImplementation(
+      makeTxMock(txRecipeCreate, txNotificationCreate)
+    );
+
+    await shareRecipe("recipe-1", "user-2");
+
+    expect(txRecipeCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "user-2",
+          sharedByUserId: "user-1",
+          sharedFromRecipeId: "recipe-1",
+          title: "Carbonara",
+          imagePath: "/media/pasta-copy.jpg",
+        }),
+      })
+    );
   });
 });

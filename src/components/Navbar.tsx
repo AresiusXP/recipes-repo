@@ -2,9 +2,19 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { handleSignOut } from "@/app/actions/auth";
 import { UserMenu } from "@/components/UserMenu";
+import { getUnreadNotificationCount } from "@/app/actions/notifications";
 
 export async function Navbar() {
   const session = await auth();
+
+  let unreadCount = 0;
+  if (session?.user?.id) {
+    try {
+      unreadCount = await getUnreadNotificationCount();
+    } catch {
+      // non-critical — degrade silently
+    }
+  }
 
   return (
     <nav className="sticky top-0 z-50 border-b border-zinc-200 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
@@ -36,6 +46,34 @@ export async function Navbar() {
             </svg>
             <span className="hidden sm:inline">Favorites</span>
           </Link>
+
+          {/* Notifications bell */}
+          {session?.user && (
+            <Link
+              href="/notifications"
+              aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+              className="relative inline-flex items-center justify-center rounded-lg border border-zinc-200 p-1.5 text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                className="h-4 w-4"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.25 9a6.75 6.75 0 0 1 13.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 0 1-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 1 1-7.48 0 24.585 24.585 0 0 1-4.831-1.244.75.75 0 0 1-.298-1.205A8.217 8.217 0 0 0 5.25 9.75V9Zm4.502 8.9a2.25 2.25 0 1 0 4.496 0 25.057 25.057 0 0 1-4.496 0Z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </Link>
+          )}
+
           <Link
             href="/recipes/new"
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-dark"

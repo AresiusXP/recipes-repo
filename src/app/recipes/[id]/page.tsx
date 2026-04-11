@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/require-auth";
 import { DeleteRecipeButton } from "@/components/DeleteRecipeButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { TranslateRecipeButton } from "@/components/TranslateRecipeButton";
+import { ShareRecipeButton } from "@/components/ShareRecipeButton";
 
 export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
   const session = await requireAuth();
@@ -17,6 +18,9 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
         include: {
           tag: true,
         },
+      },
+      sharedBy: {
+        select: { name: true, email: true },
       },
     },
   });
@@ -35,6 +39,8 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
     recipe.sourceLanguage !== "en" &&
     !recipe.isTranslatedToEnglish;
 
+  const sharedBy = recipe.sharedBy;
+
   return (
     <article className="mx-auto max-w-2xl">
       {/* Header */}
@@ -48,6 +54,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
               recipeId={id}
               initialFavorite={recipe.isFavorite}
             />
+            <ShareRecipeButton recipeId={id} />
             <Link
               href={`/recipes/${id}/edit`}
               className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -59,6 +66,14 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
         </div>
         {recipe.description && (
           <p className="text-zinc-600 dark:text-zinc-400">{recipe.description}</p>
+        )}
+        {sharedBy && (
+          <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
+            Shared by{" "}
+            <span className="font-medium text-zinc-600 dark:text-zinc-300">
+              {sharedBy.name ?? sharedBy.email ?? "a user"}
+            </span>
+          </p>
         )}
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">

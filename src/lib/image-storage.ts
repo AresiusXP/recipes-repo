@@ -194,3 +194,44 @@ export async function deleteImage(publicPath: string): Promise<void> {
     log.error({ publicPath, err: serializeError(error) }, "Failed to delete image file");
   }
 }
+
+/**
+ * Duplicates a locally stored image file and returns the new public path.
+ * Returns null if the source path is not a local media file or copy fails.
+ */
+export async function duplicateImage(publicPath: string): Promise<string | null> {
+  try {
+    if (!isLocalMediaPath(publicPath)) {
+      // Not a local file; just reuse the path (e.g. external URL stored as-is)
+      return publicPath;
+    }
+
+    const srcFilename = path.basename(publicPath);
+    const ext = path.extname(srcFilename);
+    const newFilename = `${uuidv4()}${ext}`;
+
+    const cwd = /* turbopackIgnore: true */ process.cwd();
+    const absoluteMediaDir = path.resolve(cwd, MEDIA_DIR);
+    const srcFilePath = path.join(absoluteMediaDir, srcFilename);
+    const destFilePath = path.join(absoluteMediaDir, newFilename);
+
+    // Security: ensure both paths are inside the media directory
+    if (!srcFilePath.startsWith(absoluteMediaDir) || !destFilePath.startsWith(absoluteMediaDir)) {
+      log.error({ publicPath }, "Attempted path traversal in duplicateImage — request blocked");
+      return null;
+    }
+
+    await fs.mkdir(absoluteMediaDir, { recursive: true });
+    await fs.copyFile(srcFilePath, destFilePath);
+
+    const newPublicPath = MEDIA_DIR.startsWith("public/")
+      ? `/${MEDIA_DIR.slice("public/".length)}/${newFilename}`
+      : `/media/${newFilename}`;
+
+    log.info({ srcPublicPath: publicPath, newPublicPath }, "Image duplicated successfully");
+    return newPublicPath;
+  } catch (error) {
+    log.error({ publicPath, err: serializeError(error) }, "Failed to duplicate image");
+    return null;
+  }
+}

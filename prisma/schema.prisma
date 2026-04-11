@@ -46,9 +46,12 @@ model User {
   translateRecipes Boolean @default(true)
   themePreference  String  @default("system") // "light", "dark", or "system"
 
-  accounts Account[]
-  sessions Session[]
-  recipes  Recipe[]
+  accounts      Account[]
+  sessions      Session[]
+  recipes       Recipe[]
+  sharedRecipes Recipe[]       @relation("RecipeSharedBy")
+  notifications Notification[]
+  sentShares    Notification[] @relation("NotificationSender")
 }
 
 model VerificationToken {
@@ -76,6 +79,11 @@ model Recipe {
   sourceLanguage        String?  // Detected language (e.g. "es", "fr", "en")
   isTranslatedToEnglish Boolean  @default(false)
 
+  // Sharing provenance
+  sharedByUserId    String?  // User who sent this recipe (if it was shared)
+  sharedFromRecipeId String? // Original recipe id this was copied from
+  sharedBy           User?   @relation("RecipeSharedBy", fields: [sharedByUserId], references: [id], onDelete: SetNull)
+
   userId String
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -101,4 +109,27 @@ model RecipeTag {
 
   @@id([recipeId, tagId])
   @@index([tagId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // e.g. "recipe_shared"
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Recipient
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Sender
+  senderUserId String?
+  sender       User?   @relation("NotificationSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  // Associated recipe (the copied recipe on the recipient's account)
+  recipeId String?
+
+  @@index([userId])
+  @@index([userId, isRead])
 }
