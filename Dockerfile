@@ -58,18 +58,21 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy standalone output (includes node_modules needed at runtime)
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# Copy standalone output (includes node_modules needed at runtime).
+# --chown ensures the non-root user owns every file from the start, which is
+# more efficient than a separate chown pass and is required for Next.js to
+# write prerender cache files at runtime (e.g. .next/server/app/*.body).
+COPY --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
+COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
+COPY --chown=nextjs:nodejs --from=builder /app/public ./public
 
 # Copy generated Prisma client (needed at runtime by the app)
-COPY --from=builder /app/src/generated ./src/generated
+COPY --chown=nextjs:nodejs --from=builder /app/src/generated ./src/generated
 
 # Copy entrypoint
-COPY docker-entrypoint.sh ./
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
 
-# Create data and media directories with correct permissions
+# Create data and media directories with correct ownership
 RUN mkdir -p /app/media /app/data && \
     chown -R nextjs:nodejs /app/media /app/data
 
