@@ -45,11 +45,14 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
     <article className="mx-auto max-w-2xl">
       {/* Header */}
       <div className="mb-8">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
+        <div className="mb-4">
+          <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             {recipe.title}
           </h1>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {showTranslateButton && (
+              <TranslateRecipeButton recipeId={id} />
+            )}
             <FavoriteButton
               recipeId={id}
               initialFavorite={recipe.isFavorite}
@@ -99,11 +102,6 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
               {new URL(recipe.sourceUrl).hostname}
             </a>
           </p>
-        )}
-        {showTranslateButton && (
-          <div className="mt-3">
-            <TranslateRecipeButton recipeId={id} />
-          </div>
         )}
       </div>
 
