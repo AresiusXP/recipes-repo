@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.4] — 2026-04-12
+
+_App release_
+
+- fix(docker): add --accept-data-loss to migrator db push command
+- fix(db): add --accept-data-loss flag to db:push for schema migrations
+
 ## [0.5.3] — 2026-04-12
 
 _App release_
