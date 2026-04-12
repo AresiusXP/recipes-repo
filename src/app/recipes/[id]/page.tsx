@@ -43,7 +43,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const sharedBy = recipe.sharedBy;
 
   return (
-    <article className="mx-auto max-w-2xl">
+    <article className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10">
       {/* Header */}
       <div className="mb-8">
         <div className="mb-4">
@@ -112,7 +112,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
 
       {/* Image */}
       {recipe.imagePath && (
-        <div className="mb-8 overflow-hidden rounded-xl">
+        <div className="mb-10 overflow-hidden rounded-2xl shadow-sm">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={recipe.imagePath}
@@ -123,32 +123,32 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
       )}
 
       {/* Ingredients */}
-      <section className="mb-10">
-        <h2 className="mb-5 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+      <section className="mb-12 rounded-2xl bg-zinc-50/50 p-6 dark:bg-zinc-800/20 sm:p-8">
+        <h2 className="mb-6 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           Ingredients
         </h2>
-        <ul className="space-y-3">
+        <ul className="space-y-4">
           {ingredients.map((ingredient, i) => (
             <li
               key={i}
-              className="flex items-start gap-3 text-base text-zinc-700 dark:text-zinc-300"
+              className="flex items-start gap-4 text-lg text-zinc-700 dark:text-zinc-300"
             >
-              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-              {ingredient}
+              <span className="mt-2.5 h-2 w-2 shrink-0 rounded-full bg-primary/60" />
+              <span className="leading-relaxed">{ingredient}</span>
             </li>
           ))}
         </ul>
       </section>
 
       {/* Steps */}
-      <section className="mb-10">
-        <h2 className="mb-5 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Steps
+      <section className="mb-8">
+        <h2 className="mb-6 font-serif text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Instructions
         </h2>
-        <ol className="space-y-6">
+        <ol className="space-y-8">
           {steps.map((step, i) => (
-            <li key={i} className="flex gap-4 text-base text-zinc-700 dark:text-zinc-300">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+            <li key={i} className="flex gap-5 text-lg text-zinc-700 dark:text-zinc-300">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 font-serif text-sm font-bold text-primary">
                 {i + 1}
               </span>
               <p className="pt-0.5 leading-relaxed">{step}</p>

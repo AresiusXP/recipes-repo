@@ -179,7 +179,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
   return (
     <div className="space-y-8">
       {/* Profile Picture Section */}
-      <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
         <h2 className="mb-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">
           Profile Picture
         </h2>
@@ -293,7 +293,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
+            className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
           />
         </div>
 
@@ -315,7 +315,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
                 className={`flex flex-col items-center justify-center gap-2 rounded-xl border p-4 transition-all ${
                   themePreference === theme.id
                     ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
                 }`}
               >
                 <span className="text-2xl">{theme.icon}</span>
@@ -326,7 +326,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
         </div>
 
         {/* Translate Recipes Toggle */}
-        <div className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-center justify-between rounded-2xl border border-zinc-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
           <div className="space-y-1">
             <label
               htmlFor="translateRecipes"

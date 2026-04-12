@@ -170,7 +170,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
         />
       </div>
 
@@ -187,7 +187,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
         />
       </div>
 
@@ -282,7 +282,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
                 value={ingredient}
                 onChange={(e) => updateIngredient(i, e.target.value)}
                 placeholder={`Ingredient ${i + 1}`}
-                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
               />
               <button
                 type="button"
@@ -307,18 +307,18 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
         </div>
       </div>
 
-      {/* Steps */}
+      {/* Instructions */}
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Steps
+            Instructions
           </label>
           <button
             type="button"
             onClick={addStep}
             className="text-xs font-medium text-primary hover:text-primary-dark"
           >
-            + Add step
+            + Add instruction
           </button>
         </div>
         <div className="space-y-2">
@@ -332,7 +332,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
                 onChange={(e) => updateStep(i, e.target.value)}
                 placeholder={`Step ${i + 1}`}
                 rows={2}
-                className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
               />
               <button
                 type="button"
@@ -371,7 +371,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
           placeholder="vegetarian, quick, italian..."
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
         />
         <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
           Separate tags with commas

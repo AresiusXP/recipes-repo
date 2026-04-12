@@ -146,7 +146,7 @@ export function RecipeList({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search recipes..."
-              className="w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
+              className="w-full rounded-2xl border border-zinc-200/80 bg-white/80 py-3 pl-11 pr-4 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-800/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
             />
           </div>
 
@@ -155,10 +155,10 @@ export function RecipeList({
             <button
               onClick={() => setCookThisWeekOnly((prev) => !prev)}
               aria-pressed={cookThisWeekOnly}
-              className={`flex items-center gap-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm font-medium transition-all ${
                 cookThisWeekOnly
                   ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
               }`}
               title="Show only recipes marked for this week"
             >
@@ -184,10 +184,10 @@ export function RecipeList({
           {allTags.length > 0 && (
             <button
               onClick={() => setShowTags(!showTags)}
-              className={`flex items-center gap-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-2xl border px-4 py-3 text-sm font-medium transition-all ${
                 showTags || selectedTags.length > 0
                   ? "border-primary bg-primary/10 text-primary dark:border-primary dark:text-primary"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
               }`}
             >
               <svg
@@ -339,7 +339,7 @@ export function RecipeList({
           {recipes.map((recipe) => (
             <div
               key={recipe.id}
-              className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+              className="group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white/80 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-800/60"
             >
               {/* Favorite button sits above the link, outside it */}
               <div className="absolute right-2 top-2 z-10">
@@ -423,7 +423,7 @@ export function RecipeList({
           {recipes.map((recipe) => (
             <div
               key={recipe.id}
-              className="group relative flex items-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+              className="group relative flex items-center overflow-hidden rounded-2xl border border-zinc-200/80 bg-white/80 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-800/60"
             >
               <Link
                 href={`/recipes/${recipe.id}`}

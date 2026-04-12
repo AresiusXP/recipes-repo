@@ -69,7 +69,7 @@ export function ShareRecipeButton({ recipeId }: ShareRecipeButtonProps) {
             if (e.target === e.currentTarget) handleClose();
           }}
         >
-          <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
               <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">

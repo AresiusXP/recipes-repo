@@ -75,7 +75,7 @@ export function UserMenu({ userName, userImage, signOutAction }: UserMenuProps) 
         <div
           role="menu"
           aria-label="User menu"
-          className="absolute right-0 z-10 mt-2 w-44 origin-top-right rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+          className="absolute right-0 z-10 mt-2 w-44 origin-top-right rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
         >
           <Link
             href="/settings"
