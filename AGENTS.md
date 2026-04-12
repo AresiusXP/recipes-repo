@@ -147,7 +147,50 @@ import { requireAuth } from "@/lib/require-auth";
 - It redirects to `/login` if unauthenticated and returns a session with a guaranteed `user.id`.
 - Always verify resource ownership before mutations (compare `userId`).
 
-## Prisma / Data Layer
+## Translation System
+
+Recipes support on-demand translation into **English**, **Dutch**, or **Spanish**.
+
+### User preference (`autoTranslateLanguage`)
+
+- Stored on the `User` model as a nullable string (`"en"` | `"nl"` | `"es"` | `null`).
+- `null` means automatic translation is **off** — this is the default for all new users.
+- Controlled in Settings via a 4-option picker (Off / English / Dutch / Spanish).
+- When set, newly imported recipes are automatically extracted directly into that language by Gemini at import time.
+- Exposed as `autoTranslateLanguage: AutoTranslateLanguage` in `UserSettings` and `updateUserSettings()`.
+
+### Per-recipe translation rules
+
+The translate button on the recipe detail page shows a dropdown with **English**, **Dutch**, **Spanish**, and (when translated) **Show original**.
+
+**URL-imported recipes** (`sourceUrl` is set):
+- The button is always visible.
+- Every translation (including revert to original) **re-scrapes** the original `sourceUrl` and re-extracts with Gemini using the chosen target language.
+- If the original link is unreachable, translation fails with an error — the user must accept the stored recipe as-is.
+- Translations can be applied repeatedly and freely (switch languages at any time).
+
+**Manual-import recipes** (`sourceUrl` is null):
+- One translation is permitted, using the stored `rawContent` as source.
+- After one translation, only **Show original** remains available (reverts from `rawContent`).
+- `hasBeenTranslated = true` is set after the first translation and is never reset.
+
+### Recipe model fields involved
+
+| Field | Purpose |
+|---|---|
+| `sourceLanguage` | Detected ISO 639-1 language of the original content (set at import, never changed) |
+| `translatedLanguage` | Current display language (`"en"`, `"nl"`, `"es"`), or `null` = showing original |
+| `hasBeenTranslated` | `true` once any translation has been applied; gates the one-time limit for manual imports |
+| `isTranslatedToEnglish` | Legacy boolean kept for backward compatibility; `true` when `translatedLanguage === "en"` or source is English |
+| `rawContent` | Original scraped/entered content (up to 50 000 chars); used as translation source for manual imports |
+
+### Gemini integration
+
+- `extractRecipeWithGemini(content, url, { targetLanguage })` — extracts and optionally translates in one pass. `targetLanguage: null` keeps the original language.
+- `translateRecipeWithGemini(recipe, targetLanguage)` — standalone translation helper (kept for potential future use; not called during the normal translation flow).
+- `TargetLanguage = "en" | "nl" | "es"` is exported from `src/lib/gemini.ts`.
+
+
 
 - **Client location:** Generated into `src/generated/prisma` — never hand-edit these files.
 - **Singleton pattern:** Import `prisma` from `@/lib/prisma`. Do not create new `PrismaClient` instances.

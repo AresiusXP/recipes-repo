@@ -7,6 +7,7 @@ import {
   uploadProfileImage,
   removeProfileImage,
   type UserSettings,
+  type AutoTranslateLanguage,
 } from "@/app/actions/user";
 import { applyTheme } from "@/lib/theme";
 
@@ -17,7 +18,7 @@ interface SettingsFormProps {
 export function SettingsForm({ initialSettings }: SettingsFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialSettings.name || "");
-  const [translateRecipes, setTranslateRecipes] = useState(initialSettings.translateRecipes);
+  const [autoTranslateLanguage, setAutoTranslateLanguage] = useState<AutoTranslateLanguage>(initialSettings.autoTranslateLanguage);
   const [themePreference, setThemePreference] = useState(initialSettings.themePreference);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -153,7 +154,7 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
     try {
       const result = await updateUserSettings({
         name,
-        translateRecipes,
+        autoTranslateLanguage,
         themePreference,
       });
 
@@ -325,36 +326,36 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
           </div>
         </div>
 
-        {/* Translate Recipes Toggle */}
-        <div className="flex items-center justify-between rounded-2xl border border-zinc-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
-          <div className="space-y-1">
-            <label
-              htmlFor="translateRecipes"
-              className="text-sm font-medium text-zinc-900 dark:text-zinc-50"
-            >
-              Translate recipes to English
-            </label>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              When enabled, imported recipes will be automatically translated to English.
-              Tags are always in English regardless of this setting.
-            </p>
+        {/* Automatic Translation */}
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Automatic translation on import
+          </label>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            When enabled, newly imported recipes are automatically translated into the selected language.
+            Tags are always kept in English regardless of this setting.
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {([
+              { value: null,  label: "Off" },
+              { value: "en",  label: "English" },
+              { value: "nl",  label: "Dutch" },
+              { value: "es",  label: "Spanish" },
+            ] as { value: AutoTranslateLanguage; label: string }[]).map((option) => (
+              <button
+                key={option.value ?? "off"}
+                type="button"
+                onClick={() => setAutoTranslateLanguage(option.value)}
+                className={`flex flex-col items-center justify-center gap-1 rounded-xl border p-3 text-sm font-medium transition-all ${
+                  autoTranslateLanguage === option.value
+                    ? "border-primary bg-primary/5 text-primary dark:border-primary dark:bg-primary/10"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:bg-zinc-700"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          <button
-            id="translateRecipes"
-            type="button"
-            role="switch"
-            aria-checked={translateRecipes}
-            onClick={() => setTranslateRecipes(!translateRecipes)}
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 ${
-              translateRecipes ? "bg-primary" : "bg-zinc-300 dark:bg-zinc-600"
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                translateRecipes ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </button>
         </div>
 
         {/* Status Message */}

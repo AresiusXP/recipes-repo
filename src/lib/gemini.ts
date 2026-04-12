@@ -5,6 +5,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
+/** Supported target languages for extraction and translation. */
+export type TargetLanguage = "en" | "nl" | "es";
+
 export interface GeminiRecipeResult {
   title: string;
   description: string;
@@ -15,24 +18,32 @@ export interface GeminiRecipeResult {
 }
 
 interface ExtractRecipeOptions {
-  translateToEnglish: boolean;
+  /** When provided, output will be translated into this language. When null/undefined, keeps the original language. */
+  targetLanguage?: TargetLanguage | null;
 }
+
+const LANGUAGE_NAMES: Record<TargetLanguage, string> = {
+  en: "English",
+  nl: "Dutch",
+  es: "Spanish",
+};
 
 /**
  * Sends page content to Gemini and requests structured recipe extraction.
  * Ingredients are converted to metric measurements.
- * Translation to English is controlled by the `translateToEnglish` option.
+ * When targetLanguage is provided, output is translated into that language.
+ * When targetLanguage is null/undefined, content is kept in the original language.
  * Tags are always returned in English regardless of the option.
  */
 export async function extractRecipeWithGemini(
   pageContent: string,
   sourceUrl: string,
-  options: ExtractRecipeOptions = { translateToEnglish: true }
+  options: ExtractRecipeOptions = {}
 ): Promise<GeminiRecipeResult> {
   const log = logger.child({ component: "gemini", operation: "extractRecipe", model: GEMINI_MODEL });
 
   log.debug(
-    { sourceUrl, contentLength: pageContent.length, translateToEnglish: options.translateToEnglish },
+    { sourceUrl, contentLength: pageContent.length, targetLanguage: options.targetLanguage ?? null },
     "Calling Gemini for recipe extraction"
   );
 
@@ -41,8 +52,8 @@ export async function extractRecipeWithGemini(
     generationConfig: { responseMimeType: "application/json" },
   });
 
-  const translationRule = options.translateToEnglish
-    ? "2. ALL output MUST be in English. Translate the title, description, ingredient names, step descriptions, and tags into English regardless of the original language of the recipe."
+  const translationRule = options.targetLanguage
+    ? `2. ALL output (title, description, ingredient names, step descriptions) MUST be in ${LANGUAGE_NAMES[options.targetLanguage]}. Translate everything from the original language into ${LANGUAGE_NAMES[options.targetLanguage]}. Tags MUST always be in English regardless of the target language.`
     : "2. Keep the title, description, ingredient names, and step descriptions in their ORIGINAL language. Do NOT translate them. However, tags MUST always be in English regardless of the original language.";
 
   const prompt = `You are a recipe extraction assistant. Extract the recipe from the following web page content and return a JSON object with this exact structure:
@@ -119,15 +130,18 @@ ${pageContent.slice(0, 30000)}`;
 }
 
 /**
- * Translates an existing recipe's content to English using Gemini.
+ * Translates an existing recipe's content into the specified target language using Gemini.
  * Tags are kept as-is since they are already in English.
  */
-export async function translateRecipeWithGemini(recipe: {
-  title: string;
-  description: string;
-  ingredients: string[];
-  steps: string[];
-}): Promise<{
+export async function translateRecipeWithGemini(
+  recipe: {
+    title: string;
+    description: string;
+    ingredients: string[];
+    steps: string[];
+  },
+  targetLanguage: TargetLanguage
+): Promise<{
   title: string;
   description: string;
   ingredients: string[];
@@ -136,7 +150,7 @@ export async function translateRecipeWithGemini(recipe: {
   const log = logger.child({ component: "gemini", operation: "translateRecipe", model: GEMINI_MODEL });
 
   log.debug(
-    { ingredientCount: recipe.ingredients.length, stepCount: recipe.steps.length },
+    { ingredientCount: recipe.ingredients.length, stepCount: recipe.steps.length, targetLanguage },
     "Calling Gemini for recipe translation"
   );
 
@@ -145,7 +159,9 @@ export async function translateRecipeWithGemini(recipe: {
     generationConfig: { responseMimeType: "application/json" },
   });
 
-  const prompt = `You are a recipe translation assistant. Translate the following recipe content into English. Return a JSON object with this exact structure:
+  const targetName = LANGUAGE_NAMES[targetLanguage];
+
+  const prompt = `You are a recipe translation assistant. Translate the following recipe content into ${targetName}. Return a JSON object with this exact structure:
 
 {
   "title": "Translated title",
@@ -155,7 +171,7 @@ export async function translateRecipeWithGemini(recipe: {
 }
 
 IMPORTANT RULES:
-1. Translate ALL text into English
+1. Translate ALL text into ${targetName}
 2. Keep metric measurements as they are (do not convert back to imperial)
 3. Preserve the same number of ingredients and steps
 4. Return ONLY valid JSON, no markdown code blocks, no explanation
@@ -185,7 +201,7 @@ ${JSON.stringify({
     };
 
     log.info(
-      { ingredientCount: translated.ingredients.length, stepCount: translated.steps.length },
+      { ingredientCount: translated.ingredients.length, stepCount: translated.steps.length, targetLanguage },
       "Gemini recipe translation succeeded"
     );
 

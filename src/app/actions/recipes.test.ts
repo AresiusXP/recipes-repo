@@ -128,7 +128,7 @@ describe("importRecipeFromUrl", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
-    mockPrisma.user.findUnique.mockResolvedValue({ translateRecipes: true });
+    mockPrisma.user.findUnique.mockResolvedValue({ autoTranslateLanguage: null });
   });
 
   it("returns error for invalid URL", async () => {
@@ -210,8 +210,8 @@ describe("importRecipeFromUrl", () => {
     expect(mockDownloadImage).not.toHaveBeenCalled();
   });
 
-  it("passes translateToEnglish preference from user settings", async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ translateRecipes: false });
+  it("passes targetLanguage preference from user settings (off → null)", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ autoTranslateLanguage: null });
     mockScrapePage.mockResolvedValue({
       title: "Test",
       content: "Content",
@@ -232,7 +232,29 @@ describe("importRecipeFromUrl", () => {
     expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
       "Content",
       "https://example.com/recipe",
-      { translateToEnglish: false }
+      { targetLanguage: null }
+    );
+  });
+
+  it("passes targetLanguage when user has Dutch auto-translate set", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ autoTranslateLanguage: "nl" });
+    mockScrapePage.mockResolvedValue({ title: "Test", content: "Content", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recept",
+      description: "",
+      ingredients: [],
+      steps: [],
+      tags: [],
+      detectedLanguage: "es",
+    });
+    mockPrisma.recipe.create.mockResolvedValue({ id: "recipe-3b" });
+
+    await importRecipeFromUrl("https://example.com/recipe");
+
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "Content",
+      "https://example.com/recipe",
+      { targetLanguage: "nl" }
     );
   });
 });
@@ -241,7 +263,7 @@ describe("importRecipeFromText", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
-    mockPrisma.user.findUnique.mockResolvedValue({ translateRecipes: true });
+    mockPrisma.user.findUnique.mockResolvedValue({ autoTranslateLanguage: null });
   });
 
   it("returns error for empty text", async () => {
@@ -292,7 +314,7 @@ describe("importRecipeFromText", () => {
     expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
       "Some recipe text",
       "manual entry",
-      { translateToEnglish: true }
+      { targetLanguage: null }
     );
   });
 
@@ -367,10 +389,11 @@ describe("translateRecipe", () => {
     mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
   });
 
+  // ── ownership / not-found ──────────────────────────────────────────────
   it("returns error when recipe not found", async () => {
     mockPrisma.recipe.findUnique.mockResolvedValue(null);
 
-    const result = await translateRecipe("nonexistent-id");
+    const result = await translateRecipe("nonexistent-id", "en");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Recipe not found");
@@ -379,81 +402,294 @@ describe("translateRecipe", () => {
   it("returns error when user does not own recipe", async () => {
     mockPrisma.recipe.findUnique.mockResolvedValue({
       userId: "other-user",
-      title: "Recipe",
-      isTranslatedToEnglish: false,
+      sourceUrl: "https://example.com/recipe",
+      rawContent: "content",
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
     });
 
-    const result = await translateRecipe("recipe-1");
+    const result = await translateRecipe("recipe-1", "en");
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Recipe not found");
   });
 
-  it("returns success immediately if already translated", async () => {
+  // ── URL-imported recipe: re-scrapes original link ────────────────────
+  it("re-scrapes source URL and extracts into target language for URL recipes", async () => {
     mockPrisma.recipe.findUnique.mockResolvedValue({
       userId: "user-1",
-      title: "Recipe",
-      isTranslatedToEnglish: true,
+      sourceUrl: "https://example.com/recipe",
+      rawContent: null,
       sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
     });
-
-    const result = await translateRecipe("recipe-1");
-
-    expect(result.success).toBe(true);
-    expect(mockTranslateRecipeWithGemini).not.toHaveBeenCalled();
-  });
-
-  it("marks as translated without calling Gemini for English recipes", async () => {
-    mockPrisma.recipe.findUnique.mockResolvedValue({
-      userId: "user-1",
-      title: "Recipe",
-      isTranslatedToEnglish: false,
-      sourceLanguage: "en",
-    });
-    mockPrisma.recipe.update.mockResolvedValue({});
-
-    const result = await translateRecipe("recipe-1");
-
-    expect(result.success).toBe(true);
-    expect(mockTranslateRecipeWithGemini).not.toHaveBeenCalled();
-    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
-      where: { id: "recipe-1" },
-      data: { isTranslatedToEnglish: true },
-    });
-  });
-
-  it("translates non-English recipe with Gemini", async () => {
-    mockPrisma.recipe.findUnique.mockResolvedValue({
-      userId: "user-1",
-      title: "Receta",
-      description: "Una receta",
-      ingredients: JSON.stringify(["2 huevos"]),
-      steps: JSON.stringify(["Mezclar"]),
-      isTranslatedToEnglish: false,
-      sourceLanguage: "es",
-    });
-    mockTranslateRecipeWithGemini.mockResolvedValue({
+    mockScrapePage.mockResolvedValue({ title: "T", content: "scraped content", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
       title: "Recipe",
       description: "A recipe",
       ingredients: ["2 eggs"],
       steps: ["Mix"],
+      tags: [],
+      detectedLanguage: "es",
     });
     mockPrisma.recipe.update.mockResolvedValue({});
 
-    const result = await translateRecipe("recipe-1");
+    const result = await translateRecipe("recipe-1", "en");
 
     expect(result.success).toBe(true);
-    expect(mockTranslateRecipeWithGemini).toHaveBeenCalled();
+    expect(mockScrapePage).toHaveBeenCalledWith("https://example.com/recipe");
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "scraped content",
+      "https://example.com/recipe",
+      { targetLanguage: "en" }
+    );
     expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
       where: { id: "recipe-1" },
-      data: {
+      data: expect.objectContaining({
         title: "Recipe",
-        description: "A recipe",
-        ingredients: JSON.stringify(["2 eggs"]),
-        steps: JSON.stringify(["Mix"]),
-        isTranslatedToEnglish: true,
-      },
+        translatedLanguage: "en",
+        hasBeenTranslated: true,
+      }),
     });
+  });
+
+  it("translates URL recipe to Dutch", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: "https://example.com/recipe",
+      rawContent: null,
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+    mockScrapePage.mockResolvedValue({ title: "T", content: "scraped content", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recept",
+      description: "Een recept",
+      ingredients: ["2 eieren"],
+      steps: ["Meng"],
+      tags: [],
+      detectedLanguage: "es",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await translateRecipe("recipe-1", "nl");
+
+    expect(result.success).toBe(true);
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "scraped content",
+      "https://example.com/recipe",
+      { targetLanguage: "nl" }
+    );
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
+      where: { id: "recipe-1" },
+      data: expect.objectContaining({ translatedLanguage: "nl" }),
+    });
+  });
+
+  it("translates URL recipe to Spanish", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: "https://example.com/recipe",
+      rawContent: null,
+      sourceLanguage: "en",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+    mockScrapePage.mockResolvedValue({ title: "T", content: "scraped content", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Receta",
+      description: "Una receta",
+      ingredients: ["2 huevos"],
+      steps: ["Mezclar"],
+      tags: [],
+      detectedLanguage: "en",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await translateRecipe("recipe-1", "es");
+
+    expect(result.success).toBe(true);
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "scraped content",
+      "https://example.com/recipe",
+      { targetLanguage: "es" }
+    );
+  });
+
+  it("fails when the source URL is unreachable", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: "https://example.com/recipe",
+      rawContent: null,
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+    mockScrapePage.mockRejectedValue(new Error("Connection timeout"));
+
+    const result = await translateRecipe("recipe-1", "en");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Could not reach the original recipe page");
+    expect(result.error).toContain("Connection timeout");
+    expect(mockPrisma.recipe.update).not.toHaveBeenCalled();
+  });
+
+  it("does NOT use saved recipe text as translation source for URL recipes", async () => {
+    // Only scrapePage + extractRecipeWithGemini should be called, never translateRecipeWithGemini
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: "https://example.com/recipe",
+      rawContent: "old scraped content",
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+    mockScrapePage.mockResolvedValue({ title: "T", content: "fresh content", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recipe", description: "", ingredients: [], steps: [], tags: [], detectedLanguage: "es",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    await translateRecipe("recipe-1", "en");
+
+    expect(mockTranslateRecipeWithGemini).not.toHaveBeenCalled();
+    // Gemini is called with FRESH scraped content, not the stored rawContent
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "fresh content",
+      "https://example.com/recipe",
+      { targetLanguage: "en" }
+    );
+  });
+
+  // ── Revert to original ────────────────────────────────────────────────
+  it("reverts URL recipe to original language (targetLanguage = null)", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: "https://example.com/recipe",
+      rawContent: null,
+      sourceLanguage: "es",
+      hasBeenTranslated: true,
+      translatedLanguage: "en",
+    });
+    mockScrapePage.mockResolvedValue({ title: "T", content: "scraped", imageUrl: null });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Receta", description: "", ingredients: [], steps: [], tags: [], detectedLanguage: "es",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await translateRecipe("recipe-1", null);
+
+    expect(result.success).toBe(true);
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "scraped",
+      "https://example.com/recipe",
+      { targetLanguage: null }
+    );
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
+      where: { id: "recipe-1" },
+      data: expect.objectContaining({ translatedLanguage: null }),
+    });
+    // hasBeenTranslated is NOT reset when reverting
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
+      where: { id: "recipe-1" },
+      data: expect.not.objectContaining({ hasBeenTranslated: false }),
+    });
+  });
+
+  // ── Manual import: one-time translation ────────────────────────────────
+  it("translates manual-import recipe once from rawContent", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: null,
+      rawContent: "raw recipe text",
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recipe", description: "A recipe", ingredients: ["2 eggs"], steps: ["Mix"],
+      tags: [], detectedLanguage: "es",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await translateRecipe("recipe-1", "en");
+
+    expect(result.success).toBe(true);
+    // Must not re-scrape — no sourceUrl
+    expect(mockScrapePage).not.toHaveBeenCalled();
+    // Must use rawContent as source, not translateRecipeWithGemini
+    expect(mockTranslateRecipeWithGemini).not.toHaveBeenCalled();
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "raw recipe text",
+      "manual entry",
+      { targetLanguage: "en" }
+    );
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
+      where: { id: "recipe-1" },
+      data: expect.objectContaining({ hasBeenTranslated: true }),
+    });
+  });
+
+  it("rejects second translation for manual-import recipe", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: null,
+      rawContent: "raw recipe text",
+      sourceLanguage: "es",
+      hasBeenTranslated: true, // already translated once
+      translatedLanguage: "en",
+    });
+
+    const result = await translateRecipe("recipe-1", "nl");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("already been translated");
+    expect(mockExtractRecipeWithGemini).not.toHaveBeenCalled();
+    expect(mockPrisma.recipe.update).not.toHaveBeenCalled();
+  });
+
+  it("allows revert to original for manual-import recipe even after translation", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: null,
+      rawContent: "raw recipe text",
+      sourceLanguage: "es",
+      hasBeenTranslated: true,
+      translatedLanguage: "en",
+    });
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Receta", description: "", ingredients: [], steps: [], tags: [], detectedLanguage: "es",
+    });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await translateRecipe("recipe-1", null);
+
+    expect(result.success).toBe(true);
+    expect(mockExtractRecipeWithGemini).toHaveBeenCalledWith(
+      "raw recipe text",
+      "manual entry",
+      { targetLanguage: null }
+    );
+  });
+
+  it("returns error when manual-import has no rawContent", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      sourceUrl: null,
+      rawContent: null,
+      sourceLanguage: "es",
+      hasBeenTranslated: false,
+      translatedLanguage: null,
+    });
+
+    const result = await translateRecipe("recipe-1", "en");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No source content available");
   });
 });
 
@@ -921,6 +1157,8 @@ describe("shareRecipe", () => {
     rawContent: null,
     sourceLanguage: "en",
     isTranslatedToEnglish: true,
+    translatedLanguage: null,
+    hasBeenTranslated: false,
     userId: "user-1",
     tags: [{ tag: { name: "italian" } }, { tag: { name: "pasta" } }],
   };

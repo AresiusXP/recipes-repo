@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { scrapePage } from "@/lib/scraper";
-import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
+import { extractRecipeWithGemini, type TargetLanguage } from "@/lib/gemini";
 import { downloadImage, deleteImage, duplicateImage, saveUploadedImage, isLocalMediaPath } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
 import { parseDayMonthYear } from "@/lib/cook-this-week";
@@ -59,9 +59,9 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     // Load user translation preference
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { translateRecipes: true },
+      select: { autoTranslateLanguage: true },
     });
-    const translateToEnglish = user?.translateRecipes ?? true;
+    const targetLanguage = (user?.autoTranslateLanguage as TargetLanguage | null) ?? null;
 
     // Scrape the page
     let scraped;
@@ -81,8 +81,8 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
     // Extract recipe with Gemini
     let recipe;
     try {
-      log.debug({ url, translateToEnglish }, "Extracting recipe with Gemini");
-      recipe = await extractRecipeWithGemini(scraped.content, url, { translateToEnglish });
+      log.debug({ url, targetLanguage }, "Extracting recipe with Gemini");
+      recipe = await extractRecipeWithGemini(scraped.content, url, { targetLanguage });
       log.debug({ url, detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
     } catch (aiError) {
       const msg = aiError instanceof Error ? aiError.message : "Unknown error";
@@ -122,7 +122,9 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
     // Determine translation state
     const isEnglish = recipe.detectedLanguage === "en";
-    const isTranslatedToEnglish = !isEnglish && translateToEnglish;
+    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
+    // translatedLanguage is set whenever we extracted in a different language than the source
+    const translatedLanguage = (targetLanguage && targetLanguage !== recipe.detectedLanguage) ? targetLanguage : null;
 
     // Create recipe
     const created = await prisma.recipe.create({
@@ -136,6 +138,8 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
         rawContent: scraped.content.slice(0, 50000),
         sourceLanguage: recipe.detectedLanguage,
         isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        translatedLanguage,
+        hasBeenTranslated: translatedLanguage !== null,
         userId: session.user.id,
         tags: {
           create: tagRecords.map((tag: { id: string; name: string }) => ({
@@ -152,6 +156,7 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
         title: recipe.title,
         detectedLanguage: recipe.detectedLanguage,
         isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        translatedLanguage,
         hasImage: !!imagePath,
       },
       "Recipe imported successfully from URL"
@@ -188,15 +193,15 @@ export async function importRecipeFromText(
     // Load user translation preference
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { translateRecipes: true },
+      select: { autoTranslateLanguage: true },
     });
-    const translateToEnglish = user?.translateRecipes ?? true;
+    const targetLanguage = (user?.autoTranslateLanguage as TargetLanguage | null) ?? null;
 
-    log.debug({ translateToEnglish }, "Extracting recipe from text with Gemini");
+    log.debug({ targetLanguage }, "Extracting recipe from text with Gemini");
     const recipe = await extractRecipeWithGemini(
       text,
       sourceUrl || "manual entry",
-      { translateToEnglish }
+      { targetLanguage }
     );
     log.debug({ detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
 
@@ -223,7 +228,9 @@ export async function importRecipeFromText(
 
     // Determine translation state
     const isEnglish = recipe.detectedLanguage === "en";
-    const isTranslatedToEnglish = !isEnglish && translateToEnglish;
+    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
+    // translatedLanguage is set whenever we extracted in a different language than the source
+    const translatedLanguage = (targetLanguage && targetLanguage !== recipe.detectedLanguage) ? targetLanguage : null;
 
     const created = await prisma.recipe.create({
       data: {
@@ -236,6 +243,8 @@ export async function importRecipeFromText(
         rawContent: text.slice(0, 50000),
         sourceLanguage: recipe.detectedLanguage,
         isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        translatedLanguage,
+        hasBeenTranslated: translatedLanguage !== null,
         userId: session.user.id,
         tags: {
           create: tagRecords.map((tag: { id: string; name: string }) => ({
@@ -251,6 +260,7 @@ export async function importRecipeFromText(
         title: recipe.title,
         detectedLanguage: recipe.detectedLanguage,
         isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        translatedLanguage,
         hasImage: !!imagePath,
       },
       "Recipe imported successfully from text"
@@ -267,12 +277,24 @@ export async function importRecipeFromText(
 
 // ─── Translate existing recipe ───
 
+/**
+ * Translates an existing recipe into the specified target language, or reverts it
+ * to the original language when targetLanguage is null.
+ *
+ * Rules:
+ * - For URL-imported recipes: always re-scrapes the original source URL and
+ *   extracts/translates from that fresh content. Fails if the URL is unreachable.
+ * - For manual-import recipes: uses the stored rawContent once only.
+ *   After a translation has been applied, further NEW translations are rejected;
+ *   but reverting to original is always allowed (it doesn't consume the one-time limit again).
+ */
 export async function translateRecipe(
-  recipeId: string
+  recipeId: string,
+  targetLanguage: TargetLanguage | null
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
   const operationId = randomUUID();
-  const log = logger.child({ action: "translateRecipe", operationId, recipeId, userId: session.user.id });
+  const log = logger.child({ action: "translateRecipe", operationId, recipeId, userId: session.user.id, targetLanguage });
 
   log.info("Recipe translation started");
 
@@ -280,12 +302,11 @@ export async function translateRecipe(
     where: { id: recipeId },
     select: {
       userId: true,
-      title: true,
-      description: true,
-      ingredients: true,
-      steps: true,
+      sourceUrl: true,
+      rawContent: true,
       sourceLanguage: true,
-      isTranslatedToEnglish: true,
+      hasBeenTranslated: true,
+      translatedLanguage: true,
     },
   });
 
@@ -294,47 +315,114 @@ export async function translateRecipe(
     return { success: false, error: "Recipe not found" };
   }
 
-  if (recipe.isTranslatedToEnglish) {
-    log.info("Translation skipped: recipe is already translated to English");
-    return { success: true }; // Already translated
-  }
+  const isManualImport = !recipe.sourceUrl;
 
-  if (recipe.sourceLanguage === "en") {
-    // Already in English, just mark it
-    log.info({ sourceLanguage: recipe.sourceLanguage }, "Translation skipped: recipe source language is English; marking as translated");
-    await prisma.recipe.update({
-      where: { id: recipeId },
-      data: { isTranslatedToEnglish: true },
-    });
-    revalidatePath("/recipes");
-    revalidatePath(`/recipes/${recipeId}`);
-    return { success: true };
+  // Manual imports: only allow one NEW translation (not revert to original)
+  if (isManualImport && targetLanguage !== null && recipe.hasBeenTranslated) {
+    log.warn("Translation rejected: manual-import recipe has already been translated once");
+    return { success: false, error: "This recipe was entered manually and has already been translated. Further translation is not available." };
   }
 
   try {
-    log.debug({ sourceLanguage: recipe.sourceLanguage }, "Translating recipe content with Gemini");
-    const ingredients: string[] = JSON.parse(recipe.ingredients);
-    const steps: string[] = JSON.parse(recipe.steps);
+    let geminiResult: { title: string; description: string; ingredients: string[]; steps: string[]; tags: string[] };
+    let isUrlRecipe = false;
 
-    const translated = await translateRecipeWithGemini({
-      title: recipe.title,
-      description: recipe.description || "",
-      ingredients,
-      steps,
-    });
+    if (!isManualImport) {
+      // URL-imported recipe: always re-scrape from the original link
+      log.debug({ sourceUrl: recipe.sourceUrl }, "Re-scraping original source URL for translation");
+      let scraped;
+      try {
+        scraped = await scrapePage(recipe.sourceUrl!);
+        log.debug({ contentLength: scraped.content.length }, "Source page re-scraped successfully");
+      } catch (scrapeError) {
+        const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
+        log.warn({ sourceUrl: recipe.sourceUrl, err: serializeError(scrapeError) }, "Re-scrape failed for translation");
+        return {
+          success: false,
+          error: `Could not reach the original recipe page: ${msg}. The translation source must be the original link.`,
+        };
+      }
 
-    await prisma.recipe.update({
-      where: { id: recipeId },
-      data: {
-        title: translated.title,
-        description: translated.description,
-        ingredients: JSON.stringify(translated.ingredients),
-        steps: JSON.stringify(translated.steps),
-        isTranslatedToEnglish: true,
-      },
-    });
+      const result = await extractRecipeWithGemini(scraped.content, recipe.sourceUrl!, { targetLanguage });
+      geminiResult = {
+        title: result.title,
+        description: result.description,
+        ingredients: result.ingredients,
+        steps: result.steps,
+        tags: result.tags,
+      };
+      isUrlRecipe = true;
+      log.debug({ targetLanguage }, "Recipe extracted from re-scraped source with target language");
+    } else {
+      // Manual import: re-extract from stored raw content (with or without target language)
+      if (!recipe.rawContent) {
+        log.warn("Translation/revert rejected: manual-import recipe has no stored raw content");
+        return { success: false, error: "No source content available for translation." };
+      }
+      log.debug({ sourceLanguage: recipe.sourceLanguage, targetLanguage }, "Re-extracting manual-import recipe with Gemini");
+      const result = await extractRecipeWithGemini(recipe.rawContent, "manual entry", { targetLanguage });
+      geminiResult = {
+        title: result.title,
+        description: result.description,
+        ingredients: result.ingredients,
+        steps: result.steps,
+        tags: result.tags,
+      };
+    }
 
-    log.info({ sourceLanguage: recipe.sourceLanguage }, "Recipe translated to English successfully");
+    const isEnglish = recipe.sourceLanguage === "en";
+    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
+    // translatedLanguage is set whenever we extracted in a different language than the source
+    const newTranslatedLanguage = (targetLanguage && targetLanguage !== recipe.sourceLanguage) ? targetLanguage : null;
+
+    // For URL recipes, also refresh tags from the re-scrape
+    if (isUrlRecipe && geminiResult.tags.length > 0) {
+      const tagRecords = await Promise.all(
+        geminiResult.tags.map(async (name) => {
+          return prisma.tag.upsert({
+            where: { name },
+            update: {},
+            create: { name },
+          });
+        })
+      );
+      await prisma.$transaction([
+        prisma.recipeTag.deleteMany({ where: { recipeId } }),
+        prisma.recipe.update({
+          where: { id: recipeId },
+          data: {
+            title: geminiResult.title,
+            description: geminiResult.description,
+            ingredients: JSON.stringify(geminiResult.ingredients),
+            steps: JSON.stringify(geminiResult.steps),
+            isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+            translatedLanguage: newTranslatedLanguage,
+            ...(targetLanguage !== null ? { hasBeenTranslated: true } : {}),
+            tags: {
+              create: tagRecords.map((tag: { id: string; name: string }) => ({
+                tagId: tag.id,
+              })),
+            },
+          },
+        }),
+      ]);
+    } else {
+      await prisma.recipe.update({
+        where: { id: recipeId },
+        data: {
+          title: geminiResult.title,
+          description: geminiResult.description,
+          ingredients: JSON.stringify(geminiResult.ingredients),
+          steps: JSON.stringify(geminiResult.steps),
+          isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+          translatedLanguage: newTranslatedLanguage,
+          // hasBeenTranslated stays true once set; reverting to original doesn't reset it
+          ...(targetLanguage !== null ? { hasBeenTranslated: true } : {}),
+        },
+      });
+    }
+
+    log.info({ targetLanguage, isManualImport }, targetLanguage ? "Recipe translated successfully" : "Recipe reverted to original language");
 
     revalidatePath("/recipes");
     revalidatePath(`/recipes/${recipeId}`);
@@ -781,6 +869,8 @@ export async function shareRecipe(
           rawContent: source.rawContent,
           sourceLanguage: source.sourceLanguage,
           isTranslatedToEnglish: source.isTranslatedToEnglish,
+          translatedLanguage: source.translatedLanguage,
+          hasBeenTranslated: source.hasBeenTranslated,
           isFavorite: false,
           sharedByUserId: session.user.id,
           sharedFromRecipeId: source.id,

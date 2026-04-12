@@ -9,10 +9,12 @@ import { cache } from "react";
 
 // ─── Types ───
 
+export type AutoTranslateLanguage = "en" | "nl" | "es" | null;
+
 export interface UserSettings {
   name: string | null;
   image: string | null;
-  translateRecipes: boolean;
+  autoTranslateLanguage: AutoTranslateLanguage;
   themePreference: string;
 }
 
@@ -23,13 +25,13 @@ export const getUserSettings = cache(async (): Promise<UserSettings> => {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { name: true, image: true, translateRecipes: true, themePreference: true },
+    select: { name: true, image: true, autoTranslateLanguage: true, themePreference: true },
   });
 
   return {
     name: user?.name ?? null,
     image: user?.image ?? null,
-    translateRecipes: user?.translateRecipes ?? true,
+    autoTranslateLanguage: (user?.autoTranslateLanguage ?? null) as AutoTranslateLanguage,
     themePreference: user?.themePreference ?? "system",
   };
 });
@@ -151,7 +153,7 @@ export async function removeProfileImage(): Promise<{ success: boolean; error?: 
 // ─── Update user settings ───
 
 export async function updateUserSettings(
-  data: { name?: string; translateRecipes?: boolean; themePreference?: string }
+  data: { name?: string; autoTranslateLanguage?: AutoTranslateLanguage; themePreference?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
   const log = logger.child({ action: "updateUserSettings", userId: session.user.id });
@@ -165,8 +167,11 @@ export async function updateUserSettings(
       updateData.name = data.name.trim() || null;
     }
 
-    if (typeof data.translateRecipes === "boolean") {
-      updateData.translateRecipes = data.translateRecipes;
+    if (Object.prototype.hasOwnProperty.call(data, "autoTranslateLanguage")) {
+      const lang = data.autoTranslateLanguage;
+      if (lang === null || lang === "en" || lang === "nl" || lang === "es") {
+        updateData.autoTranslateLanguage = lang;
+      }
     }
 
     if (typeof data.themePreference === "string" && ["light", "dark", "system"].includes(data.themePreference)) {

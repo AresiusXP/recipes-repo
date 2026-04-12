@@ -43,7 +43,7 @@ model User {
   emailVerified DateTime?
   image         String?
 
-  translateRecipes Boolean @default(true)
+  autoTranslateLanguage String? // null = off, "en" / "nl" / "es" = auto-translate target
   themePreference  String  @default("system") // "light", "dark", or "system"
 
   accounts      Account[]
@@ -79,6 +79,8 @@ model Recipe {
 
   sourceLanguage        String?  // Detected language (e.g. "es", "fr", "en")
   isTranslatedToEnglish Boolean  @default(false)
+  translatedLanguage    String?  // Language the recipe is currently displayed in (null = original)
+  hasBeenTranslated     Boolean  @default(false) // True once any manual translation has been applied
 
   // Sharing provenance
   sharedByUserId    String?  // User who sent this recipe (if it was shared)
