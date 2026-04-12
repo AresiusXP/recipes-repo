@@ -44,7 +44,7 @@ ENV DATABASE_URL="file:/app/data/recipes.db"
 
 USER nextjs
 
-CMD npx prisma db push --schema prisma/schema.prisma --url "$DATABASE_URL"
+CMD npx prisma db push --schema prisma/schema.prisma --url "$DATABASE_URL" --accept-data-loss
 
 # ─── Production stage ───
 FROM node:20-alpine AS runner
