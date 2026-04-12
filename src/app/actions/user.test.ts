@@ -82,7 +82,7 @@ describe("getUserSettings", () => {
     mockPrisma.user.findUnique.mockResolvedValue({
       name: "Test User",
       image: "/media/avatar.jpg",
-      translateRecipes: false,
+      autoTranslateLanguage: "nl",
       themePreference: "dark",
     });
 
@@ -91,7 +91,7 @@ describe("getUserSettings", () => {
     expect(result).toEqual({
       name: "Test User",
       image: "/media/avatar.jpg",
-      translateRecipes: false,
+      autoTranslateLanguage: "nl",
       themePreference: "dark",
     });
   });
@@ -104,7 +104,7 @@ describe("getUserSettings", () => {
     expect(result).toEqual({
       name: null,
       image: null,
-      translateRecipes: true,
+      autoTranslateLanguage: null,
       themePreference: "system",
     });
   });
@@ -258,16 +258,62 @@ describe("updateUserSettings", () => {
     });
   });
 
-  it("updates translateRecipes preference", async () => {
+  it("updates autoTranslateLanguage to English", async () => {
     mockPrisma.user.update.mockResolvedValue({});
 
-    const result = await updateUserSettings({ translateRecipes: false });
+    const result = await updateUserSettings({ autoTranslateLanguage: "en" });
 
     expect(result.success).toBe(true);
     expect(mockPrisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { translateRecipes: false },
+      data: { autoTranslateLanguage: "en" },
     });
+  });
+
+  it("updates autoTranslateLanguage to Dutch", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    const result = await updateUserSettings({ autoTranslateLanguage: "nl" });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { autoTranslateLanguage: "nl" },
+    });
+  });
+
+  it("updates autoTranslateLanguage to Spanish", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    const result = await updateUserSettings({ autoTranslateLanguage: "es" });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { autoTranslateLanguage: "es" },
+    });
+  });
+
+  it("sets autoTranslateLanguage to null (off)", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    const result = await updateUserSettings({ autoTranslateLanguage: null });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { autoTranslateLanguage: null },
+    });
+  });
+
+  it("ignores invalid autoTranslateLanguage values", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+
+    // Pass an invalid value via a type cast to simulate bad input
+    const result = await updateUserSettings({ autoTranslateLanguage: "fr" as "en" });
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
   });
 
   it("updates themePreference", async () => {
@@ -303,13 +349,13 @@ describe("updateUserSettings", () => {
 
     const result = await updateUserSettings({
       name: "Updated Name",
-      translateRecipes: true,
+      autoTranslateLanguage: "en",
     });
 
     expect(result.success).toBe(true);
     expect(mockPrisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { name: "Updated Name", translateRecipes: true },
+      data: { name: "Updated Name", autoTranslateLanguage: "en" },
     });
   });
 

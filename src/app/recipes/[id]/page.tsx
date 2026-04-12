@@ -7,6 +7,7 @@ import { FavoriteButton } from "@/components/FavoriteButton";
 import { CookThisWeekButton } from "@/components/CookThisWeekButton";
 import { TranslateRecipeButton } from "@/components/TranslateRecipeButton";
 import { ShareRecipeButton } from "@/components/ShareRecipeButton";
+import type { TargetLanguage } from "@/lib/gemini";
 
 export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
   const session = await requireAuth();
@@ -34,11 +35,12 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const steps: string[] = JSON.parse(recipe.steps);
   const tags = recipe.tags.map((rt: { tag: { name: string } }) => rt.tag.name);
 
-  // Show translate button if recipe is not in English and hasn't been translated
-  const showTranslateButton =
-    recipe.sourceLanguage !== null &&
-    recipe.sourceLanguage !== "en" &&
-    !recipe.isTranslatedToEnglish;
+  // Show translate button if:
+  // - URL recipes: always (source can be re-scraped any time)
+  // - Manual recipes: only if not yet translated (one-time limit)
+  const hasSourceUrl = !!recipe.sourceUrl;
+  const isManualImport = !hasSourceUrl;
+  const showTranslateButton = hasSourceUrl || !recipe.hasBeenTranslated;
 
   const sharedBy = recipe.sharedBy;
 
@@ -52,7 +54,13 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
           </h1>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {showTranslateButton && (
-              <TranslateRecipeButton recipeId={id} />
+              <TranslateRecipeButton
+                recipeId={id}
+                isManualImport={isManualImport}
+                hasBeenTranslated={recipe.hasBeenTranslated}
+                currentTranslatedLanguage={(recipe.translatedLanguage as TargetLanguage | null) ?? null}
+                sourceLanguage={recipe.sourceLanguage ?? null}
+              />
             )}
             <FavoriteButton
               recipeId={id}
