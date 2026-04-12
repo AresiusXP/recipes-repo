@@ -108,10 +108,16 @@ GitHub Container Registry (GHCR) via GitHub Actions.
 #### Releasing
 
 - **App release** — push a tag like `v1.2.3`. This builds and pushes the
-  container image, updates `Chart.yaml` (`version` + `appVersion`), and
-  publishes the Helm chart.
+  container image, updates `Chart.yaml` (`version` + `appVersion`), publishes
+  the Helm chart, and prepends a new entry to [`CHANGELOG.md`](CHANGELOG.md).
 - **Chart-only release** — push a tag like `helm-v1.2.4`. This bumps only the
-  chart `version` (keeps the existing `appVersion`) and publishes the chart.
+  chart `version` (keeps the existing `appVersion`), publishes the chart, and
+  prepends a new entry (labelled _Chart-only release (appVersion unchanged)_) to [`CHANGELOG.md`](CHANGELOG.md).
+
+Both workflows commit the updated `CHANGELOG.md` back to `main` alongside the
+`Chart.yaml` bump. The changelog is generated automatically by
+`scripts/update-changelog.mjs` from the commit messages between the previous
+tag and the new one.
 
 ### 1. Create the Kubernetes Secret
 

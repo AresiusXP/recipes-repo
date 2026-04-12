@@ -25,6 +25,9 @@ jobs:
       # ── Checkout the tagged commit ───────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       # ── Derive version from tag ──────────────────────────────
       - name: Extract version from tag
@@ -90,8 +93,8 @@ jobs:
           helm push recipes-repo-${{ steps.version.outputs.version }}.tgz \
             oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
 
-      # ── Commit version bump back to main ─────────────────────
-      - name: Commit Chart.yaml changes to main
+      # ── Commit version bump + changelog back to main ─────────
+      - name: Commit Chart.yaml and CHANGELOG.md changes to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -100,8 +103,9 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
           yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          git add "${{ env.CHART_PATH }}/Chart.yaml"
+          node scripts/update-changelog.mjs "v${VERSION}"
+          git add "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: bump chart to ${{ steps.version.outputs.version }} [skip ci]"
+          git commit -m "chore: bump chart and update changelog for v${{ steps.version.outputs.version }} [skip ci]"
           git pull --rebase origin main
           git push origin main
