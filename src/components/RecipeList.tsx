@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { searchRecipes } from "@/app/actions/recipes";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { formatReadable, isCookThisWeekActive } from "@/lib/cook-this-week";
 
 type ViewMode = "grid" | "list";
 const VIEW_MODE_KEY = "recipes:view-mode";
@@ -16,6 +17,7 @@ interface RecipeSummary {
   imagePath: string | null;
   sourceUrl: string | null;
   isFavorite: boolean;
+  cookThisWeekUntil: string | null;
   tags: string[];
   createdAt: string;
 }
@@ -24,9 +26,15 @@ interface RecipeListProps {
   initialRecipes: RecipeSummary[];
   initialTags: string[];
   favoritesOnly?: boolean;
+  initialCookThisWeekOnly?: boolean;
 }
 
-export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false }: RecipeListProps) {
+export function RecipeList({
+  initialRecipes,
+  initialTags,
+  favoritesOnly = false,
+  initialCookThisWeekOnly = false,
+}: RecipeListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -36,6 +44,7 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
   const [selectedTags, setSelectedTags] = useState<string[]>(
     searchParams.get("tags")?.split(",").filter(Boolean) || []
   );
+  const [cookThisWeekOnly, setCookThisWeekOnly] = useState(initialCookThisWeekOnly);
   const [loading, setLoading] = useState(false);
   const [showTags, setShowTags] = useState(false);
 
@@ -67,16 +76,16 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
   const loadRecipes = useCallback(async () => {
     setLoading(true);
     try {
-      const results = await searchRecipes(query, selectedTags, favoritesOnly);
+      const results = await searchRecipes(query, selectedTags, favoritesOnly, cookThisWeekOnly);
       setRecipes(results);
     } catch (err) {
       console.error("Failed to load recipes:", err);
     } finally {
       setLoading(false);
     }
-  }, [query, selectedTags, favoritesOnly]);
+  }, [query, selectedTags, favoritesOnly, cookThisWeekOnly]);
 
-  // Reload recipes when query or tags change (skip initial render)
+  // Reload recipes when query, tags, or week filter change (skip initial render)
   const [isInitialRender, setIsInitialRender] = useState(true);
   useEffect(() => {
     if (isInitialRender) {
@@ -90,12 +99,17 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
       const params = new URLSearchParams();
       if (query) params.set("q", query);
       if (selectedTags.length > 0) params.set("tags", selectedTags.join(","));
-      const newUrl = params.toString() ? `?${params.toString()}` : favoritesOnly ? "/recipes/favorites" : "/recipes";
+      if (cookThisWeekOnly) params.set("week", "1");
+      const newUrl = params.toString()
+        ? `?${params.toString()}`
+        : favoritesOnly
+        ? "/recipes/favorites"
+        : "/recipes";
       router.replace(newUrl, { scroll: false });
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, selectedTags, loadRecipes, router, isInitialRender, favoritesOnly]);
+  }, [query, selectedTags, cookThisWeekOnly, loadRecipes, router, isInitialRender, favoritesOnly]);
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) =>
@@ -135,6 +149,37 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
               className="w-full rounded-lg border border-zinc-200 bg-white py-2.5 pl-10 pr-3 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
             />
           </div>
+
+          {/* Cook this week filter toggle */}
+          {!favoritesOnly && (
+            <button
+              onClick={() => setCookThisWeekOnly((prev) => !prev)}
+              aria-pressed={cookThisWeekOnly}
+              className={`flex items-center gap-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                cookThisWeekOnly
+                  ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              }`}
+              title="Show only recipes marked for this week"
+            >
+              {/* Calendar icon */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill={cookThisWeekOnly ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth={cookThisWeekOnly ? 0 : 2}
+                className="h-4 w-4"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"
+                />
+              </svg>
+              <span className="hidden sm:inline">This week</span>
+            </button>
+          )}
 
           {allTags.length > 0 && (
             <button
@@ -270,16 +315,16 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
       ) : recipes.length === 0 ? (
         <div className="py-16 text-center">
           <p className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
-            {query || selectedTags.length > 0
+            {query || selectedTags.length > 0 || cookThisWeekOnly
               ? "No recipes match your search"
               : "No recipes yet"}
           </p>
           <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
-            {query || selectedTags.length > 0
-              ? "Try different search terms or tags"
+            {query || selectedTags.length > 0 || cookThisWeekOnly
+              ? "Try different search terms or filters"
               : "Add your first recipe to get started!"}
           </p>
-          {!(query || selectedTags.length > 0) && (
+          {!(query || selectedTags.length > 0 || cookThisWeekOnly) && (
             <Link
               href="/recipes/new"
               className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-dark"
@@ -331,6 +376,24 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
                     <p className="mt-1 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">
                       {recipe.description}
                     </p>
+                  )}
+                  {/* Cook this week badge */}
+                  {isCookThisWeekActive(recipe.cookThisWeekUntil) && (
+                    <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="h-3 w-3"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      By {formatReadable(recipe.cookThisWeekUntil!)}
+                    </span>
                   )}
                   {recipe.tags.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
@@ -405,23 +468,39 @@ export function RecipeList({ initialRecipes, initialTags, favoritesOnly = false 
                       {recipe.description}
                     </p>
                   )}
-                  {recipe.tags.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {recipe.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                    {/* Cook this week badge */}
+                    {isCookThisWeekActive(recipe.cookThisWeekUntil) && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-3 w-3"
                         >
-                          {tag}
-                        </span>
-                      ))}
-                      {recipe.tags.length > 3 && (
-                        <span className="text-xs text-zinc-400">
-                          +{recipe.tags.length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  )}
+                          <path
+                            fillRule="evenodd"
+                            d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        By {formatReadable(recipe.cookThisWeekUntil!)}
+                      </span>
+                    )}
+                    {recipe.tags.slice(0, 3).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {recipe.tags.length > 3 && (
+                      <span className="text-xs text-zinc-400">
+                        +{recipe.tags.length - 3} more
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Link>
 

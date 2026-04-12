@@ -6,6 +6,7 @@ import { scrapePage } from "@/lib/scraper";
 import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
 import { downloadImage, deleteImage, duplicateImage } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
+import { parseDayMonthYear } from "@/lib/cook-this-week";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomUUID } from "crypto";
@@ -434,6 +435,80 @@ export async function deleteRecipe(recipeId: string): Promise<void> {
   redirect("/recipes");
 }
 
+// ─── Cook This Week ───
+
+export async function setCookThisWeek(
+  recipeId: string,
+  expiryDateStr: string
+): Promise<{ success: boolean; cookThisWeekUntil?: string; error?: string }> {
+  const session = await requireAuth();
+  const log = logger.child({ action: "setCookThisWeek", recipeId, userId: session.user.id });
+
+  const recipe = await prisma.recipe.findUnique({
+    where: { id: recipeId },
+    select: { userId: true },
+  });
+
+  if (!recipe || recipe.userId !== session.user.id) {
+    log.warn("setCookThisWeek rejected: recipe not found or ownership mismatch");
+    return { success: false, error: "Recipe not found" };
+  }
+
+  let expiryDate: Date;
+  try {
+    expiryDate = parseDayMonthYear(expiryDateStr);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Invalid date";
+    log.warn({ expiryDateStr }, "setCookThisWeek rejected: invalid date");
+    return { success: false, error: message };
+  }
+
+  const updated = await prisma.recipe.update({
+    where: { id: recipeId },
+    data: { cookThisWeekUntil: expiryDate },
+    select: { cookThisWeekUntil: true },
+  });
+
+  log.info({ expiryDate }, "Recipe marked as cook-this-week");
+
+  revalidatePath("/recipes");
+  revalidatePath(`/recipes/${recipeId}`);
+
+  return {
+    success: true,
+    cookThisWeekUntil: updated.cookThisWeekUntil?.toISOString(),
+  };
+}
+
+export async function removeCookThisWeek(
+  recipeId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await requireAuth();
+  const log = logger.child({ action: "removeCookThisWeek", recipeId, userId: session.user.id });
+
+  const recipe = await prisma.recipe.findUnique({
+    where: { id: recipeId },
+    select: { userId: true },
+  });
+
+  if (!recipe || recipe.userId !== session.user.id) {
+    log.warn("removeCookThisWeek rejected: recipe not found or ownership mismatch");
+    return { success: false, error: "Recipe not found" };
+  }
+
+  await prisma.recipe.update({
+    where: { id: recipeId },
+    data: { cookThisWeekUntil: null },
+  });
+
+  log.info("Cook-this-week mark removed");
+
+  revalidatePath("/recipes");
+  revalidatePath(`/recipes/${recipeId}`);
+
+  return { success: true };
+}
+
 // ─── Toggle favorite ───
 
 export async function toggleFavorite(
@@ -469,7 +544,12 @@ export async function toggleFavorite(
 
 // ─── Search & filter ───
 
-export async function searchRecipes(query: string, tagNames: string[], favoritesOnly = false) {
+export async function searchRecipes(
+  query: string,
+  tagNames: string[],
+  favoritesOnly = false,
+  cookThisWeekOnly = false
+) {
   const session = await requireAuth();
 
   const where: Record<string, unknown> = {
@@ -478,6 +558,14 @@ export async function searchRecipes(query: string, tagNames: string[], favorites
 
   if (favoritesOnly) {
     where.isFavorite = true;
+  }
+
+  if (cookThisWeekOnly) {
+    // Compare against the start of today in UTC so recipes are visible for the
+    // full calendar date they were marked until, regardless of the time of day.
+    const startOfToday = new Date();
+    startOfToday.setUTCHours(0, 0, 0, 0);
+    where.cookThisWeekUntil = { gte: startOfToday };
   }
 
   // Text search on title and ingredients
@@ -512,13 +600,14 @@ export async function searchRecipes(query: string, tagNames: string[], favorites
     orderBy: { createdAt: "desc" },
   });
 
-  return recipes.map((r: { id: string; title: string; description: string | null; imagePath: string | null; sourceUrl: string | null; isFavorite: boolean; tags: { tag: { name: string } }[]; createdAt: Date }) => ({
+  return recipes.map((r: { id: string; title: string; description: string | null; imagePath: string | null; sourceUrl: string | null; isFavorite: boolean; cookThisWeekUntil: Date | null; tags: { tag: { name: string } }[]; createdAt: Date }) => ({
     id: r.id,
     title: r.title,
     description: r.description,
     imagePath: r.imagePath,
     sourceUrl: r.sourceUrl,
     isFavorite: r.isFavorite,
+    cookThisWeekUntil: r.cookThisWeekUntil ? r.cookThisWeekUntil.toISOString() : null,
     tags: r.tags.map((rt: { tag: { name: string } }) => rt.tag.name),
     createdAt: r.createdAt.toISOString(),
   }));

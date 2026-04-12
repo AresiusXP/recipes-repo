@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { DeleteRecipeButton } from "@/components/DeleteRecipeButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
+import { CookThisWeekButton } from "@/components/CookThisWeekButton";
 import { TranslateRecipeButton } from "@/components/TranslateRecipeButton";
 import { ShareRecipeButton } from "@/components/ShareRecipeButton";
 
@@ -56,6 +57,10 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
             <FavoriteButton
               recipeId={id}
               initialFavorite={recipe.isFavorite}
+            />
+            <CookThisWeekButton
+              recipeId={id}
+              initialCookThisWeekUntil={recipe.cookThisWeekUntil?.toISOString() ?? null}
             />
             <ShareRecipeButton recipeId={id} />
             <Link

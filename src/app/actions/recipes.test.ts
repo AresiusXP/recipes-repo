@@ -107,7 +107,11 @@ import {
   getUserTags,
   getOtherUsers,
   shareRecipe,
+  setCookThisWeek,
+  removeCookThisWeek,
 } from "@/app/actions/recipes";
+
+import { parseDayMonthYear, getDefaultCookThisWeekExpiry } from "@/lib/cook-this-week";
 
 const DEFAULT_SESSION = {
   user: { id: "user-1", name: "Test User", email: "test@example.com" },
@@ -608,6 +612,7 @@ describe("searchRecipes", () => {
         imagePath: "/media/test.jpg",
         sourceUrl: "https://example.com",
         isFavorite: true,
+        cookThisWeekUntil: null,
         tags: [{ tag: { name: "italian" } }],
         createdAt: new Date("2024-01-01"),
       },
@@ -623,6 +628,7 @@ describe("searchRecipes", () => {
       imagePath: "/media/test.jpg",
       sourceUrl: "https://example.com",
       isFavorite: true,
+      cookThisWeekUntil: null,
       tags: ["italian"],
       createdAt: "2024-01-01T00:00:00.000Z",
     });
@@ -889,5 +895,258 @@ describe("shareRecipe", () => {
         }),
       })
     );
+  });
+});
+
+// ─── parseDayMonthYear ───
+
+describe("parseDayMonthYear", () => {
+  it("parses a valid dd/mm/yyyy string", () => {
+    const date = parseDayMonthYear("27/04/2025");
+    expect(date.getUTCFullYear()).toBe(2025);
+    expect(date.getUTCMonth()).toBe(3); // April = 3 (0-indexed)
+    expect(date.getUTCDate()).toBe(27);
+    // Should be set to end-of-day UTC
+    expect(date.getUTCHours()).toBe(23);
+    expect(date.getUTCMinutes()).toBe(59);
+    expect(date.getUTCSeconds()).toBe(59);
+  });
+
+  it("rejects a string not matching dd/mm/yyyy", () => {
+    expect(() => parseDayMonthYear("2025-04-27")).toThrow("Date must be in dd/mm/yyyy format");
+    expect(() => parseDayMonthYear("27-04-2025")).toThrow("Date must be in dd/mm/yyyy format");
+    expect(() => parseDayMonthYear("not-a-date")).toThrow("Date must be in dd/mm/yyyy format");
+  });
+
+  it("rejects an impossible date (e.g. 30 Feb)", () => {
+    expect(() => parseDayMonthYear("30/02/2025")).toThrow("Invalid date");
+  });
+});
+
+// ─── getDefaultCookThisWeekExpiry ───
+
+describe("getDefaultCookThisWeekExpiry", () => {
+  it("returns a Date set to end-of-day UTC", () => {
+    const result = getDefaultCookThisWeekExpiry();
+    expect(result.getUTCHours()).toBe(23);
+    expect(result.getUTCMinutes()).toBe(59);
+    expect(result.getUTCSeconds()).toBe(59);
+  });
+
+  it("returns a Sunday", () => {
+    const result = getDefaultCookThisWeekExpiry();
+    // The date is stored end-of-day UTC (23:59:59), so check UTC day
+    expect(result.getUTCDay()).toBe(0); // 0 = Sunday in UTC
+  });
+
+  it("returns a date >= today", () => {
+    const result = getDefaultCookThisWeekExpiry();
+    // Strip time for comparison
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    expect(result.getTime()).toBeGreaterThanOrEqual(today.getTime());
+  });
+});
+
+// ─── setCookThisWeek ───
+
+describe("setCookThisWeek", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("returns error when recipe not found", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(null);
+
+    const result = await setCookThisWeek("nonexistent-id", "27/04/2025");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found");
+  });
+
+  it("returns error when user does not own recipe", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "other-user" });
+
+    const result = await setCookThisWeek("recipe-1", "27/04/2025");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found");
+  });
+
+  it("returns error for an invalid date string", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+
+    const result = await setCookThisWeek("recipe-1", "not-a-date");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/dd\/mm\/yyyy/);
+  });
+
+  it("returns error for an impossible date", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+
+    const result = await setCookThisWeek("recipe-1", "30/02/2025");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Invalid date");
+  });
+
+  it("saves cookThisWeekUntil and returns the ISO string", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    const expiryDate = new Date("2025-04-27T23:59:59.999Z");
+    mockPrisma.recipe.update.mockResolvedValue({ cookThisWeekUntil: expiryDate });
+
+    const result = await setCookThisWeek("recipe-1", "27/04/2025");
+
+    expect(result.success).toBe(true);
+    expect(result.cookThisWeekUntil).toBe(expiryDate.toISOString());
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "recipe-1" },
+        data: expect.objectContaining({ cookThisWeekUntil: expect.any(Date) }),
+      })
+    );
+  });
+
+  it("revalidates the recipe page and recipes list", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    const expiryDate = new Date("2025-04-27T23:59:59.999Z");
+    mockPrisma.recipe.update.mockResolvedValue({ cookThisWeekUntil: expiryDate });
+
+    await setCookThisWeek("recipe-1", "27/04/2025");
+
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/recipes");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/recipes/recipe-1");
+  });
+});
+
+// ─── removeCookThisWeek ───
+
+describe("removeCookThisWeek", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("returns error when recipe not found", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue(null);
+
+    const result = await removeCookThisWeek("nonexistent-id");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found");
+  });
+
+  it("returns error when user does not own recipe", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "other-user" });
+
+    const result = await removeCookThisWeek("recipe-1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Recipe not found");
+  });
+
+  it("clears cookThisWeekUntil to null", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    const result = await removeCookThisWeek("recipe-1");
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.recipe.update).toHaveBeenCalledWith({
+      where: { id: "recipe-1" },
+      data: { cookThisWeekUntil: null },
+    });
+  });
+
+  it("revalidates the recipe page and recipes list", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.recipe.update.mockResolvedValue({});
+
+    await removeCookThisWeek("recipe-1");
+
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/recipes");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/recipes/recipe-1");
+  });
+});
+
+// ─── searchRecipes — cookThisWeekOnly filter ───
+
+describe("searchRecipes — cookThisWeekOnly filter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("passes cookThisWeekOnly filter using gte: start of today UTC", async () => {
+    mockPrisma.recipe.findMany.mockResolvedValue([]);
+
+    await searchRecipes("", [], false, true);
+
+    const call = mockPrisma.recipe.findMany.mock.calls[0][0];
+    expect(call.where.cookThisWeekUntil).toBeDefined();
+    const gte: Date = call.where.cookThisWeekUntil.gte;
+    expect(gte).toBeInstanceOf(Date);
+    // The filter should be midnight UTC of today
+    expect(gte.getUTCHours()).toBe(0);
+    expect(gte.getUTCMinutes()).toBe(0);
+    expect(gte.getUTCSeconds()).toBe(0);
+    expect(gte.getUTCMilliseconds()).toBe(0);
+    // And it should be today's UTC date
+    const today = new Date();
+    expect(gte.getUTCFullYear()).toBe(today.getUTCFullYear());
+    expect(gte.getUTCMonth()).toBe(today.getUTCMonth());
+    expect(gte.getUTCDate()).toBe(today.getUTCDate());
+  });
+
+  it("does not include cookThisWeekUntil filter when false", async () => {
+    mockPrisma.recipe.findMany.mockResolvedValue([]);
+
+    await searchRecipes("", [], false, false);
+
+    const call = mockPrisma.recipe.findMany.mock.calls[0][0];
+    expect(call.where.cookThisWeekUntil).toBeUndefined();
+  });
+
+  it("maps cookThisWeekUntil to ISO string in returned data", async () => {
+    const expiryDate = new Date("2025-04-27T23:59:59.999Z");
+    mockPrisma.recipe.findMany.mockResolvedValue([
+      {
+        id: "recipe-1",
+        title: "Pasta",
+        description: null,
+        imagePath: null,
+        sourceUrl: null,
+        isFavorite: false,
+        cookThisWeekUntil: expiryDate,
+        tags: [],
+        createdAt: new Date("2024-01-01"),
+      },
+    ]);
+
+    const result = await searchRecipes("", []);
+
+    expect(result[0].cookThisWeekUntil).toBe(expiryDate.toISOString());
+  });
+
+  it("maps null cookThisWeekUntil to null in returned data", async () => {
+    mockPrisma.recipe.findMany.mockResolvedValue([
+      {
+        id: "recipe-1",
+        title: "Pasta",
+        description: null,
+        imagePath: null,
+        sourceUrl: null,
+        isFavorite: false,
+        cookThisWeekUntil: null,
+        tags: [],
+        createdAt: new Date("2024-01-01"),
+      },
+    ]);
+
+    const result = await searchRecipes("", []);
+
+    expect(result[0].cookThisWeekUntil).toBeNull();
   });
 });
