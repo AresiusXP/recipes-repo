@@ -95,7 +95,7 @@ export function NotificationsList({ initialNotifications }: NotificationsListPro
               key={notification.id}
               className={`rounded-xl border p-4 transition-colors ${
                 notification.isRead
-                  ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+                  ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-800"
                   : "border-primary/30 bg-primary/5 dark:border-primary/20 dark:bg-primary/5"
               }`}
             >

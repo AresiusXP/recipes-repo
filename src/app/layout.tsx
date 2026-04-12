@@ -41,7 +41,7 @@ export default async function RootLayout({
       className={`${inter.variable} ${lora.variable} ${initialClass} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col font-sans">
+      <body className="min-h-full flex flex-col font-serif text-lg leading-relaxed">
         <ThemeController theme={theme} />
         {children}
       </body>

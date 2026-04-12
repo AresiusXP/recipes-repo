@@ -249,7 +249,7 @@ export function CookThisWeekButton({
         <div
           role="dialog"
           aria-label="Pick a cook-by date"
-          className="absolute left-0 top-full z-50 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+          className="absolute left-0 top-full z-50 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
         >
           <p className="mb-3 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
             Cook by date

@@ -17,8 +17,8 @@ export async function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-zinc-200 bg-white/80 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/80">
-      <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
+    <nav className="sticky top-4 z-50 mx-auto mt-4 w-[calc(100%-2rem)] max-w-4xl rounded-2xl border border-zinc-200/50 bg-white/70 shadow-sm backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-800/50">
+      <div className="flex h-14 items-center justify-between px-4">
         <Link
           href="/recipes"
           className="flex items-center gap-2 font-serif text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
@@ -30,7 +30,7 @@ export async function Navbar() {
         <div className="flex items-center gap-3">
           <Link
             href="/recipes/favorites"
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -52,7 +52,7 @@ export async function Navbar() {
             <Link
               href="/notifications"
               aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-              className="relative inline-flex items-center justify-center rounded-lg border border-zinc-200 p-1.5 text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              className="relative inline-flex items-center justify-center rounded-lg border border-zinc-200 p-1.5 text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"

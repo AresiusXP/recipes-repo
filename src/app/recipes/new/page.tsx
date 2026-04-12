@@ -102,13 +102,13 @@ export default function NewRecipePage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10">
       <h1 className="mb-6 font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
         Add Recipe
       </h1>
 
       {/* Mode Toggle */}
-      <div className="mb-6 flex rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-6 flex rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-800 dark:bg-zinc-800">
         <button
           type="button"
           onClick={() => switchMode("url")}
@@ -149,7 +149,7 @@ export default function NewRecipePage() {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com/recipe..."
               required
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
+              className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
             />
             <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
               Paste the full URL of a recipe page. We&apos;ll extract and format it automatically.
@@ -171,7 +171,7 @@ export default function NewRecipePage() {
                 placeholder="Paste the recipe text here..."
                 required
                 rows={12}
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
+                className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
               />
               <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                 If the URL import doesn&apos;t work, paste the recipe content directly.
@@ -190,7 +190,7 @@ export default function NewRecipePage() {
                 value={textSourceUrl}
                 onChange={(e) => setTextSourceUrl(e.target.value)}
                 placeholder="https://example.com/recipe..."
-                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:placeholder-zinc-500"
+                className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
               />
             </div>
 
