@@ -166,8 +166,46 @@ describe("scrapePage", () => {
     });
 
     await expect(scrapePage("https://example.com/missing")).rejects.toThrow(
-      "Failed to fetch page: 404 Not Found"
+      "404 Not Found"
     );
+  });
+
+  it("throws a user-friendly message on 403 Forbidden", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+    });
+
+    await expect(scrapePage("https://example.com/blocked")).rejects.toThrow(
+      "This site blocked automated fetching (403 Forbidden)"
+    );
+  });
+
+  it("throws a user-friendly message on 401 Unauthorized", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+    });
+
+    await expect(scrapePage("https://example.com/private")).rejects.toThrow(
+      "This site blocked automated fetching (401 Unauthorized)"
+    );
+  });
+
+  it("sends browser-like headers including User-Agent and Accept-Language", async () => {
+    const html = makeHtml("<p>Content</p>");
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve(html) });
+
+    await scrapePage("https://example.com/recipe");
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["User-Agent"]).toContain("Mozilla/5.0");
+    expect(headers["Accept-Language"]).toBeTruthy();
+    expect(headers["Upgrade-Insecure-Requests"]).toBe("1");
   });
 
   it("removes script and style tags from content", async () => {
