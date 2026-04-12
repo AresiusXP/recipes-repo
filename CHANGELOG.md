@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] — 2026-04-12
+
+_App release_
+
+- fix(db): add --accept-data-loss flag to db:push for schema migrations
+- ci: automate changelog updates for release tags
+- feat(recipes): overhaul multilingual translation flow
+- feat(ui): give recipes app a cozy visual refresh
+
 ## [0.5.2] — 2026-04-12
 
 _App release_
