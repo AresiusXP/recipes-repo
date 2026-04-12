@@ -12,6 +12,8 @@ const {
   mockDownloadImage,
   mockDeleteImage,
   mockDuplicateImage,
+  mockSaveUploadedImage,
+  mockIsLocalMediaPath,
 } = vi.hoisted(() => ({
   mockRedirect: vi.fn(),
   mockRevalidatePath: vi.fn(),
@@ -40,6 +42,8 @@ const {
   mockDownloadImage: vi.fn(),
   mockDeleteImage: vi.fn(),
   mockDuplicateImage: vi.fn(),
+  mockSaveUploadedImage: vi.fn(),
+  mockIsLocalMediaPath: vi.fn(),
 }));
 
 // ─── Module mocks ───
@@ -75,6 +79,8 @@ vi.mock("@/lib/image-storage", () => ({
   downloadImage: (...args: unknown[]) => mockDownloadImage(...args),
   deleteImage: (...args: unknown[]) => mockDeleteImage(...args),
   duplicateImage: (...args: unknown[]) => mockDuplicateImage(...args),
+  saveUploadedImage: (...args: unknown[]) => mockSaveUploadedImage(...args),
+  isLocalMediaPath: (...args: unknown[]) => mockIsLocalMediaPath(...args),
 }));
 
 // Silence the logger during tests
@@ -289,6 +295,70 @@ describe("importRecipeFromText", () => {
       { translateToEnglish: true }
     );
   });
+
+  it("saves an uploaded image when provided", async () => {
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Manual Recipe",
+      description: "Manually entered",
+      ingredients: ["2 eggs"],
+      steps: ["Crack eggs"],
+      tags: [],
+      detectedLanguage: "en",
+    });
+    mockPrisma.recipe.create.mockResolvedValue({ id: "recipe-6" });
+    mockSaveUploadedImage.mockResolvedValue("/media/upload.jpg");
+
+    const file = new File([new ArrayBuffer(100)], "photo.jpg", { type: "image/jpeg" });
+    const result = await importRecipeFromText("2 eggs, crack and cook", undefined, file);
+
+    expect(result.success).toBe(true);
+    expect(mockSaveUploadedImage).toHaveBeenCalledWith(file);
+    expect(mockPrisma.recipe.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ imagePath: "/media/upload.jpg" }),
+      })
+    );
+  });
+
+  it("returns error when uploaded image save fails", async () => {
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recipe",
+      description: "",
+      ingredients: [],
+      steps: [],
+      tags: [],
+      detectedLanguage: "en",
+    });
+    mockSaveUploadedImage.mockResolvedValue(null);
+
+    const file = new File([new ArrayBuffer(100)], "photo.jpg", { type: "image/jpeg" });
+    const result = await importRecipeFromText("Some recipe text", undefined, file);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Failed to save image");
+    expect(mockPrisma.recipe.create).not.toHaveBeenCalled();
+  });
+
+  it("creates recipe with null imagePath when no image file provided", async () => {
+    mockExtractRecipeWithGemini.mockResolvedValue({
+      title: "Recipe",
+      description: "",
+      ingredients: [],
+      steps: [],
+      tags: [],
+      detectedLanguage: "en",
+    });
+    mockPrisma.recipe.create.mockResolvedValue({ id: "recipe-7" });
+
+    await importRecipeFromText("Some recipe text");
+
+    expect(mockSaveUploadedImage).not.toHaveBeenCalled();
+    expect(mockPrisma.recipe.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ imagePath: null }),
+      })
+    );
+  });
 });
 
 describe("translateRecipe", () => {
@@ -409,7 +479,7 @@ describe("updateRecipe", () => {
   });
 
   it("returns error when user does not own recipe", async () => {
-    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "other-user" });
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "other-user", imagePath: null });
 
     const result = await updateRecipe("recipe-1", {
       title: "Updated",
@@ -424,7 +494,7 @@ describe("updateRecipe", () => {
   });
 
   it("normalizes tags to lowercase and trimmed", async () => {
-    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: null });
     mockPrisma.tag.upsert.mockImplementation(({ where }: { where: { name: string } }) =>
       Promise.resolve({ id: `tag-${where.name}`, name: where.name })
     );
@@ -448,7 +518,7 @@ describe("updateRecipe", () => {
   });
 
   it("uses a transaction to delete old tags and update recipe", async () => {
-    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: null });
     mockPrisma.tag.upsert.mockResolvedValue({ id: "tag-1", name: "test" });
     mockPrisma.$transaction.mockResolvedValue([]);
 
@@ -466,6 +536,93 @@ describe("updateRecipe", () => {
         expect.anything(), // update
       ])
     );
+  });
+
+  it("keeps existing image when imageAction is 'keep'", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: "/media/old.jpg" });
+    mockPrisma.tag.upsert.mockResolvedValue({ id: "tag-1", name: "test" });
+    mockPrisma.$transaction.mockResolvedValue([]);
+
+    const result = await updateRecipe(
+      "recipe-1",
+      { title: "Updated", description: "", ingredients: [], steps: [], tags: [] },
+      "keep"
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockSaveUploadedImage).not.toHaveBeenCalled();
+    expect(mockDeleteImage).not.toHaveBeenCalled();
+  });
+
+  it("replaces image when imageAction is 'replace' and imageFile provided", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: "/media/old.jpg" });
+    mockPrisma.tag.upsert.mockResolvedValue({ id: "tag-1", name: "test" });
+    mockPrisma.$transaction.mockResolvedValue([]);
+    mockSaveUploadedImage.mockResolvedValue("/media/new.jpg");
+    mockIsLocalMediaPath.mockReturnValue(true);
+
+    const file = new File([new ArrayBuffer(100)], "photo.jpg", { type: "image/jpeg" });
+    const result = await updateRecipe(
+      "recipe-1",
+      { title: "Updated", description: "", ingredients: [], steps: [], tags: [] },
+      "replace",
+      file
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockSaveUploadedImage).toHaveBeenCalledWith(file);
+    expect(mockDeleteImage).toHaveBeenCalledWith("/media/old.jpg");
+  });
+
+  it("returns error when image save fails during replace", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: null });
+    mockSaveUploadedImage.mockResolvedValue(null);
+
+    const file = new File([new ArrayBuffer(100)], "photo.jpg", { type: "image/jpeg" });
+    const result = await updateRecipe(
+      "recipe-1",
+      { title: "Updated", description: "", ingredients: [], steps: [], tags: [] },
+      "replace",
+      file
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Failed to save image");
+  });
+
+  it("removes image and deletes local file when imageAction is 'remove'", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({ userId: "user-1", imagePath: "/media/old.jpg" });
+    mockPrisma.tag.upsert.mockResolvedValue({ id: "tag-1", name: "test" });
+    mockPrisma.$transaction.mockResolvedValue([]);
+    mockIsLocalMediaPath.mockReturnValue(true);
+
+    const result = await updateRecipe(
+      "recipe-1",
+      { title: "Updated", description: "", ingredients: [], steps: [], tags: [] },
+      "remove"
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockDeleteImage).toHaveBeenCalledWith("/media/old.jpg");
+  });
+
+  it("does not delete old image when it is not a local path during remove", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      imagePath: "https://external.example.com/img.jpg",
+    });
+    mockPrisma.tag.upsert.mockResolvedValue({ id: "tag-1", name: "test" });
+    mockPrisma.$transaction.mockResolvedValue([]);
+    mockIsLocalMediaPath.mockReturnValue(false);
+
+    const result = await updateRecipe(
+      "recipe-1",
+      { title: "Updated", description: "", ingredients: [], steps: [], tags: [] },
+      "remove"
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockDeleteImage).not.toHaveBeenCalled();
   });
 });
 
@@ -502,12 +659,27 @@ describe("deleteRecipe", () => {
     });
     mockPrisma.recipe.delete.mockResolvedValue({});
     mockDeleteImage.mockResolvedValue(undefined);
+    mockIsLocalMediaPath.mockReturnValue(true);
 
     await expect(deleteRecipe("recipe-1")).rejects.toThrow("NEXT_REDIRECT");
 
     expect(mockDeleteImage).toHaveBeenCalledWith("/media/test.jpg");
     expect(mockPrisma.recipe.delete).toHaveBeenCalledWith({ where: { id: "recipe-1" } });
     expect(mockRedirect).toHaveBeenCalledWith("/recipes");
+  });
+
+  it("deletes recipe without deleting external image", async () => {
+    mockPrisma.recipe.findUnique.mockResolvedValue({
+      userId: "user-1",
+      imagePath: "https://external.example.com/img.jpg",
+    });
+    mockPrisma.recipe.delete.mockResolvedValue({});
+    mockIsLocalMediaPath.mockReturnValue(false);
+
+    await expect(deleteRecipe("recipe-1")).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mockDeleteImage).not.toHaveBeenCalled();
+    expect(mockPrisma.recipe.delete).toHaveBeenCalledWith({ where: { id: "recipe-1" } });
   });
 
   it("deletes recipe without image when imagePath is null", async () => {

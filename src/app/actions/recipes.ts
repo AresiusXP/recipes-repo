@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
 import { scrapePage } from "@/lib/scraper";
 import { extractRecipeWithGemini, translateRecipeWithGemini } from "@/lib/gemini";
-import { downloadImage, deleteImage, duplicateImage } from "@/lib/image-storage";
+import { downloadImage, deleteImage, duplicateImage, saveUploadedImage, isLocalMediaPath } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
 import { parseDayMonthYear } from "@/lib/cook-this-week";
 import { revalidatePath } from "next/cache";
@@ -170,13 +170,14 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
 export async function importRecipeFromText(
   text: string,
-  sourceUrl?: string
+  sourceUrl?: string,
+  imageFile?: File | null
 ): Promise<ImportResult> {
   const session = await requireAuth();
   const operationId = randomUUID();
   const log = logger.child({ action: "importRecipeFromText", operationId, userId: session.user.id });
 
-  log.info({ textLength: text.length, hasSourceUrl: !!sourceUrl }, "Recipe import from text started");
+  log.info({ textLength: text.length, hasSourceUrl: !!sourceUrl, hasImage: !!imageFile }, "Recipe import from text started");
 
   if (!text.trim()) {
     log.warn("Recipe import rejected: empty text");
@@ -209,6 +210,17 @@ export async function importRecipeFromText(
       })
     );
 
+    // Save uploaded image if provided
+    let imagePath: string | null = null;
+    if (imageFile && imageFile.size > 0) {
+      log.debug({ fileSize: imageFile.size, fileType: imageFile.type }, "Saving uploaded recipe image");
+      imagePath = await saveUploadedImage(imageFile);
+      if (!imagePath) {
+        log.warn({ fileSize: imageFile.size, fileType: imageFile.type }, "Recipe image save failed: unsupported type or size limit exceeded");
+        return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
+      }
+    }
+
     // Determine translation state
     const isEnglish = recipe.detectedLanguage === "en";
     const isTranslatedToEnglish = !isEnglish && translateToEnglish;
@@ -218,7 +230,7 @@ export async function importRecipeFromText(
         title: recipe.title,
         description: recipe.description,
         sourceUrl: sourceUrl || null,
-        imagePath: null,
+        imagePath,
         ingredients: JSON.stringify(recipe.ingredients),
         steps: JSON.stringify(recipe.steps),
         rawContent: text.slice(0, 50000),
@@ -239,6 +251,7 @@ export async function importRecipeFromText(
         title: recipe.title,
         detectedLanguage: recipe.detectedLanguage,
         isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
+        hasImage: !!imagePath,
       },
       "Recipe imported successfully from text"
     );
@@ -337,23 +350,40 @@ export async function translateRecipe(
 
 export async function updateRecipe(
   recipeId: string,
-  data: RecipeFormData
+  data: RecipeFormData,
+  imageAction: "keep" | "replace" | "remove" = "keep",
+  imageFile?: File | null
 ): Promise<{ success: boolean; error?: string }> {
   const session = await requireAuth();
   const operationId = randomUUID();
   const log = logger.child({ action: "updateRecipe", operationId, recipeId, userId: session.user.id });
 
-  log.info("Recipe update started");
+  log.info({ imageAction, hasNewImage: !!imageFile }, "Recipe update started");
 
-  // Verify ownership
+  // Verify ownership and fetch current imagePath
   const existing = await prisma.recipe.findUnique({
     where: { id: recipeId },
-    select: { userId: true },
+    select: { userId: true, imagePath: true },
   });
 
   if (!existing || existing.userId !== session.user.id) {
     log.warn("Update rejected: recipe not found or ownership mismatch");
     return { success: false, error: "Recipe not found" };
+  }
+
+  // Resolve the new imagePath
+  let newImagePath: string | null | undefined = undefined; // undefined = no change
+
+  if (imageAction === "remove") {
+    newImagePath = null;
+  } else if (imageAction === "replace" && imageFile && imageFile.size > 0) {
+    log.debug({ fileSize: imageFile.size, fileType: imageFile.type }, "Saving new recipe image");
+    const saved = await saveUploadedImage(imageFile);
+    if (!saved) {
+      log.warn({ fileSize: imageFile.size, fileType: imageFile.type }, "New recipe image save failed");
+      return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
+    }
+    newImagePath = saved;
   }
 
   try {
@@ -368,6 +398,23 @@ export async function updateRecipe(
       })
     );
 
+    // Build recipe update data
+    const recipeUpdateData: Record<string, unknown> = {
+      title: data.title,
+      description: data.description,
+      ingredients: JSON.stringify(data.ingredients),
+      steps: JSON.stringify(data.steps),
+      tags: {
+        create: tagRecords.map((tag: { id: string; name: string }) => ({
+          tagId: tag.id,
+        })),
+      },
+    };
+
+    if (newImagePath !== undefined) {
+      recipeUpdateData.imagePath = newImagePath;
+    }
+
     // Delete existing tag associations and update recipe in a transaction
     await prisma.$transaction([
       prisma.recipeTag.deleteMany({
@@ -375,21 +422,17 @@ export async function updateRecipe(
       }),
       prisma.recipe.update({
         where: { id: recipeId },
-        data: {
-          title: data.title,
-          description: data.description,
-          ingredients: JSON.stringify(data.ingredients),
-          steps: JSON.stringify(data.steps),
-          tags: {
-            create: tagRecords.map((tag: { id: string; name: string }) => ({
-              tagId: tag.id,
-            })),
-          },
-        },
+        data: recipeUpdateData,
       }),
     ]);
 
-    log.info({ tagCount: tagRecords.length }, "Recipe updated successfully");
+    // Delete the old image file after the DB update succeeds
+    if (newImagePath !== undefined && existing.imagePath && isLocalMediaPath(existing.imagePath)) {
+      log.debug({ oldImagePath: existing.imagePath }, "Deleting old recipe image file");
+      await deleteImage(existing.imagePath);
+    }
+
+    log.info({ tagCount: tagRecords.length, imageAction }, "Recipe updated successfully");
 
     revalidatePath("/recipes");
     revalidatePath(`/recipes/${recipeId}`);
@@ -419,8 +462,8 @@ export async function deleteRecipe(recipeId: string): Promise<void> {
     return;
   }
 
-  // Delete the image file if it exists
-  if (recipe.imagePath) {
+  // Delete the image file if it exists and is a local file
+  if (recipe.imagePath && isLocalMediaPath(recipe.imagePath)) {
     log.debug({ imagePath: recipe.imagePath }, "Deleting recipe image file");
     await deleteImage(recipe.imagePath);
   }

@@ -2,10 +2,9 @@ import fs from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { logger, serializeError } from "@/lib/logger";
+import { IMAGE_ALLOWED_TYPES, IMAGE_MAX_SIZE } from "@/lib/image-constants";
 
 const MEDIA_DIR = process.env.MEDIA_DIR || "public/media";
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 const log = logger.child({ component: "image-storage" });
 
@@ -43,23 +42,23 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
     const contentType = response.headers.get("content-type") || "";
     const mimeType = contentType.split(";")[0].trim().toLowerCase();
 
-    if (!ALLOWED_TYPES.includes(mimeType)) {
+    if (!IMAGE_ALLOWED_TYPES.includes(mimeType as typeof IMAGE_ALLOWED_TYPES[number])) {
       log.warn({ imageUrl, mimeType }, "Image download rejected: unsupported MIME type");
       return null;
     }
 
     // Validate content length
     const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-    if (contentLength > MAX_SIZE) {
-      log.warn({ imageUrl, contentLength, maxSize: MAX_SIZE }, "Image download rejected: content-length exceeds limit");
+    if (contentLength > IMAGE_MAX_SIZE) {
+      log.warn({ imageUrl, contentLength, maxSize: IMAGE_MAX_SIZE }, "Image download rejected: content-length exceeds limit");
       return null;
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
 
     // Double-check actual size
-    if (buffer.length > MAX_SIZE) {
-      log.warn({ imageUrl, actualSize: buffer.length, maxSize: MAX_SIZE }, "Image download rejected: actual size exceeds limit");
+    if (buffer.length > IMAGE_MAX_SIZE) {
+      log.warn({ imageUrl, actualSize: buffer.length, maxSize: IMAGE_MAX_SIZE }, "Image download rejected: actual size exceeds limit");
       return null;
     }
 
@@ -106,22 +105,22 @@ export async function downloadImage(imageUrl: string): Promise<string | null> {
 export async function saveUploadedImage(file: File): Promise<string | null> {
   try {
     // Validate MIME type
-    if (!ALLOWED_TYPES.includes(file.type)) {
+    if (!IMAGE_ALLOWED_TYPES.includes(file.type as typeof IMAGE_ALLOWED_TYPES[number])) {
       log.warn({ fileType: file.type }, "Uploaded image rejected: unsupported MIME type");
       return null;
     }
 
     // Validate size
-    if (file.size > MAX_SIZE) {
-      log.warn({ fileSize: file.size, maxSize: MAX_SIZE }, "Uploaded image rejected: file size exceeds limit");
+    if (file.size > IMAGE_MAX_SIZE) {
+      log.warn({ fileSize: file.size, maxSize: IMAGE_MAX_SIZE }, "Uploaded image rejected: file size exceeds limit");
       return null;
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Double-check actual size
-    if (buffer.length > MAX_SIZE) {
-      log.warn({ actualSize: buffer.length, maxSize: MAX_SIZE }, "Uploaded image rejected: actual buffer size exceeds limit");
+    if (buffer.length > IMAGE_MAX_SIZE) {
+      log.warn({ actualSize: buffer.length, maxSize: IMAGE_MAX_SIZE }, "Uploaded image rejected: actual buffer size exceeds limit");
       return null;
     }
 

@@ -35,7 +35,7 @@ export default async function EditRecipePage(props: { params: Promise<{ id: stri
       <h1 className="mb-6 font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
         Edit Recipe
       </h1>
-      <RecipeEditForm recipeId={id} initialData={initialData} />
+      <RecipeEditForm recipeId={id} initialData={initialData} initialImagePath={recipe.imagePath} />
     </div>
   );
 }
