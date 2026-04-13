@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] — 2026-04-13
+
+_App release_
+
+- fix(import): handle bot-blocked recipe pages gracefully
+- chore: bump chart and update changelog for v0.5.4 [skip ci]
+- fix(docker): add --accept-data-loss to migrator db push command
+- chore: bump chart and update changelog for v0.5.3 [skip ci]
+
 ## [0.5.4] — 2026-04-12
 
 _App release_
