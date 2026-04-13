@@ -1,6 +1,10 @@
 import * as cheerio from "cheerio";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import pino from "pino";
 import { logger } from "@/lib/logger";
+
+const execFileAsync = promisify(execFile);
 
 export interface ScrapedPage {
   title: string;
@@ -24,23 +28,25 @@ export class SiteBlockedError extends Error {
   }
 }
 
-// ─── Request header presets ───
+// ─── Header presets ───
+
+interface HeaderMap {
+  [key: string]: string;
+}
 
 /**
- * Headers that closely mimic a Chrome 135 browser navigation request.
- * These are the full set of headers Chromium sends for a top-level navigation.
+ * Full Chrome 135 browser navigation headers.
+ * Sent for a top-level navigation (typing URL in address bar or clicking a link).
  */
-function makeBrowserHeaders(url: string, referer?: string): Record<string, string> {
-  const parsed = new URL(url);
-  const origin = parsed.origin;
-
+function makeBrowserHeaders(referer?: string): HeaderMap {
   return {
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
     "Accept":
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
+    // Accept-Encoding is omitted — curl --compressed handles it automatically
+    // and adding it manually would send a duplicate header.
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
     "Upgrade-Insecure-Requests": "1",
@@ -52,17 +58,15 @@ function makeBrowserHeaders(url: string, referer?: string): Record<string, strin
     "Sec-CH-UA-Mobile": "?0",
     "Sec-CH-UA-Platform": '"Windows"',
     "DNT": "1",
+    // Origin is intentionally omitted: browsers do not send it on plain GET navigations.
     ...(referer ? { "Referer": referer } : {}),
-    // Some CDNs check the Host via Origin header on first-party navigation
-    "Origin": origin,
   };
 }
 
 /**
- * Minimal fallback headers (the old behaviour) for sites that don't care
- * about the full browser fingerprint.
+ * Minimal fallback headers for sites with less aggressive bot detection.
  */
-function makeMinimalHeaders(): Record<string, string> {
+function makeMinimalHeaders(): HeaderMap {
   return {
     "User-Agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
@@ -73,40 +77,94 @@ function makeMinimalHeaders(): Record<string, string> {
   };
 }
 
-// ─── Fetch with retry ───
+// ─── curl-based fetch ───
+
+interface FetchResult {
+  status: number;
+  body: string;
+}
 
 interface FetchAttempt {
-  headers: Record<string, string>;
   label: string;
+  headers: HeaderMap;
 }
 
 /**
- * Fetches a URL with a sequence of header strategies.
- * Returns the first successful response, or throws the last error.
+ * Builds the curl argument list for a given URL and header map.
+ *
+ * curl is used instead of Node.js fetch because curl (libcurl) has a different
+ * TLS ClientHello fingerprint (JA3/JA4) from Node.js/undici (OpenSSL). Sites
+ * using Akamai or similar CDN bot-detection identify and block Node.js's TLS
+ * fingerprint regardless of the HTTP headers sent. curl's fingerprint is not
+ * in the same blocklists, so it succeeds where fetch fails.
+ *
+ * --write-out appends "\n%{http_code}" to stdout so we can parse the status
+ * code from the last line without needing a separate stderr channel.
+ */
+function buildCurlArgs(url: string, headers: HeaderMap): string[] {
+  const args: string[] = [
+    "--silent",           // no progress meter
+    "--location",         // follow redirects (e.g. ah.nl/r/... shortlinks)
+    "--compressed",       // auto-decompress gzip/br (we advertise it in Accept-Encoding)
+    "--max-time", "15",   // 15 s total timeout
+    "--max-redirs", "10", // follow up to 10 redirects
+    "--write-out", "\n%{http_code}", // append status code as last line of stdout
+  ];
+
+  for (const [name, value] of Object.entries(headers)) {
+    args.push("-H", `${name}: ${value}`);
+  }
+
+  args.push(url);
+  return args;
+}
+
+/**
+ * Runs curl for the given URL + headers and returns { status, body }.
+ * Throws on network-level failures (curl exit code != 0 for non-HTTP reasons).
+ */
+async function runCurl(url: string, headers: HeaderMap): Promise<FetchResult> {
+  const args = buildCurlArgs(url, headers);
+
+  // execFile does not spawn a shell, so the URL and headers are safe from injection.
+  const { stdout } = await execFileAsync("curl", args, {
+    maxBuffer: 10 * 1024 * 1024, // 10 MB — generous for any recipe page
+    encoding: "utf8",
+  });
+
+  // The last line of stdout is the HTTP status code written by --write-out.
+  const lastNewline = stdout.lastIndexOf("\n");
+  const statusLine = stdout.slice(lastNewline + 1).trim();
+  const body = stdout.slice(0, lastNewline);
+  const status = parseInt(statusLine, 10);
+
+  if (isNaN(status)) {
+    throw new Error(`curl returned unexpected output (could not parse status code)`);
+  }
+
+  return { status, body };
+}
+
+/**
+ * Fetches a URL with a sequence of header strategies, using curl.
+ * Returns the body on the first successful (2xx) response.
+ * Retries on 403/401; throws SiteBlockedError if all strategies are exhausted.
+ * Throws a plain Error for other non-2xx statuses.
  */
 async function fetchWithStrategies(
   url: string,
   log: pino.Logger
-): Promise<Response> {
+): Promise<string> {
   const parsed = new URL(url);
   const homepageReferer = `${parsed.origin}/`;
 
   const attempts: FetchAttempt[] = [
-    // Strategy 1: full browser fingerprint, no referer (simulates typing URL in address bar)
-    {
-      label: "browser-direct",
-      headers: makeBrowserHeaders(url),
-    },
-    // Strategy 2: full browser fingerprint, with same-site homepage referer (simulates clicking a link)
-    {
-      label: "browser-with-referer",
-      headers: makeBrowserHeaders(url, homepageReferer),
-    },
-    // Strategy 3: minimal/old headers (last resort)
-    {
-      label: "minimal",
-      headers: makeMinimalHeaders(),
-    },
+    // Strategy 1: full browser fingerprint, no referer (direct navigation)
+    { label: "browser-direct", headers: makeBrowserHeaders() },
+    // Strategy 2: full browser fingerprint + same-site referer (link click)
+    { label: "browser-with-referer", headers: makeBrowserHeaders(homepageReferer) },
+    // Strategy 3: minimal headers (last resort)
+    { label: "minimal", headers: makeMinimalHeaders() },
   ];
 
   let lastStatus = 0;
@@ -115,57 +173,65 @@ async function fetchWithStrategies(
   for (const attempt of attempts) {
     log.debug({ strategy: attempt.label }, "Attempting fetch");
 
-    let response: Response;
+    let result: FetchResult;
     try {
-      response = await fetch(url, {
-        headers: attempt.headers,
-        redirect: "follow",
-        signal: AbortSignal.timeout(15000),
-      });
+      result = await runCurl(url, attempt.headers);
     } catch (err) {
-      // Network-level error (timeout, DNS, etc.) — don't retry with headers
+      // curl process-level failure (DNS, timeout, binary not found, etc.)
+      // Don't retry — this won't improve with different headers.
       throw err;
     }
 
-    if (response.ok) {
-      log.debug({ strategy: attempt.label, status: response.status }, "Fetch succeeded");
-      return response;
+    if (result.status >= 200 && result.status < 300) {
+      log.debug({ strategy: attempt.label, status: result.status }, "Fetch succeeded");
+      return result.body;
     }
 
-    lastStatus = response.status;
-    lastStatusText = response.statusText;
+    lastStatus = result.status;
+    lastStatusText = httpStatusText(result.status);
 
     log.warn(
-      { strategy: attempt.label, status: response.status, statusText: response.statusText },
+      { strategy: attempt.label, status: result.status, statusText: lastStatusText },
       "Fetch attempt returned non-OK status"
     );
 
-    // Only retry on 403/401 — other errors (404, 5xx) won't improve with different headers
-    if (response.status !== 403 && response.status !== 401) {
+    // Only retry on 403/401 — other errors (404, 5xx) won't improve with different headers.
+    if (result.status !== 403 && result.status !== 401) {
       break;
     }
   }
 
-  // All strategies exhausted or a non-retryable status was encountered
   if (lastStatus === 403 || lastStatus === 401) {
     throw new SiteBlockedError(lastStatus, lastStatusText);
   }
   throw new Error(`${lastStatus} ${lastStatusText}`);
 }
 
+/** Returns a human-readable status text for common HTTP codes. */
+function httpStatusText(status: number): string {
+  const texts: Record<number, string> = {
+    200: "OK", 301: "Moved Permanently", 302: "Found", 307: "Temporary Redirect",
+    400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found",
+    429: "Too Many Requests", 500: "Internal Server Error", 502: "Bad Gateway",
+    503: "Service Unavailable", 504: "Gateway Timeout",
+  };
+  return texts[status] ?? "Unknown";
+}
+
 // ─── Main scraper ───
 
 /**
  * Fetches a web page and extracts the main text content and best image.
+ *
+ * Uses curl as the HTTP client to avoid Node.js/undici TLS fingerprint
+ * detection by CDN bot-protection systems (e.g. Akamai).
  */
 export async function scrapePage(url: string): Promise<ScrapedPage> {
   const log = logger.child({ component: "scraper", url });
 
   log.debug("Fetching page");
 
-  const response = await fetchWithStrategies(url, log);
-
-  const html = await response.text();
+  const html = await fetchWithStrategies(url, log);
   const $ = cheerio.load(html);
 
   // Extract JSON-LD structured data before removing scripts
@@ -199,7 +265,6 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 
   // Fallback to text extraction if no JSON-LD recipe was found
   if (!content) {
-    // Try to find recipe-specific content first
     const recipeSelectors = [
       '[itemtype*="Recipe"]',
       ".recipe",
@@ -217,7 +282,6 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
       }
     }
 
-    // Final fallback: body text
     if (!content) {
       content = $("body").text().trim();
     }
@@ -228,7 +292,6 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 
   log.info(
     {
-      status: response.status,
       contentLength: content.length,
       hasImage: !!imageUrl,
       usedJsonLd: foundJsonLd,
@@ -245,23 +308,19 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 }
 
 function findBestImage($: cheerio.CheerioAPI): string | null {
-  // Priority order for finding the recipe image
   const candidates: string[] = [];
 
-  // 1. Open Graph image
   const ogImage = $('meta[property="og:image"]').attr("content");
   if (ogImage) candidates.push(ogImage);
 
-  // 2. Twitter card image
   const twitterImage = $('meta[name="twitter:image"]').attr("content");
   if (twitterImage) candidates.push(twitterImage);
 
-  // 3. Schema.org Recipe image
-  const schemaImage = $('[itemtype*="Recipe"] [itemprop="image"]').attr("src") ||
+  const schemaImage =
+    $('[itemtype*="Recipe"] [itemprop="image"]').attr("src") ||
     $('[itemtype*="Recipe"] [itemprop="image"]').attr("content");
   if (schemaImage) candidates.push(schemaImage);
 
-  // 4. First large image in the article/main content
   const contentImages = $("article img, main img, .recipe img, [class*='recipe'] img");
   contentImages.each((_, img) => {
     const src = $(img).attr("src");

@@ -72,6 +72,9 @@ COPY --chown=nextjs:nodejs --from=builder /app/src/generated ./src/generated
 # Copy entrypoint
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
 
+# Install curl (needed by the scraper to bypass TLS fingerprint bot-detection)
+RUN apk add --no-cache curl
+
 # Create data and media directories with correct ownership
 RUN mkdir -p /app/media /app/data && \
     chown -R nextjs:nodejs /app/media /app/data

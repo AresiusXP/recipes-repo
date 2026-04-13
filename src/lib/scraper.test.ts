@@ -1,8 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock global fetch
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+// ─── Mock child_process before importing the module under test ───
+const mockExecFile = vi.fn();
+
+vi.mock("node:child_process", () => ({
+  execFile: (...args: unknown[]) => {
+    // execFile(cmd, args, opts, callback) — promisify wraps the callback form
+    // We store the mock as the callback-based version; promisify handles the rest.
+    // But since we vi.mock and promisify runs at import time, we intercept at
+    // the promisified level by making mockExecFile return a promise-like value.
+    return mockExecFile(...args);
+  },
+}));
+
+vi.mock("node:util", () => ({
+  promisify:
+    (fn: (...args: unknown[]) => unknown) =>
+    (...args: unknown[]) =>
+      // When promisify wraps execFile, the result is called with (cmd, args, opts).
+      // Our mockExecFile just returns a promise directly.
+      fn(...args),
+}));
 
 // Silence the logger during tests
 vi.mock("@/lib/logger", () => ({
@@ -25,16 +43,34 @@ vi.mock("@/lib/logger", () => ({
 
 import { scrapePage, SiteBlockedError } from "@/lib/scraper";
 
+// ─── Helpers ───
+
 function makeHtml(body: string, head = ""): string {
   return `<!DOCTYPE html><html><head>${head}</head><body>${body}</body></html>`;
 }
 
-function makeOkResponse(html: string): Response {
-  return { ok: true, status: 200, statusText: "OK", text: () => Promise.resolve(html) } as unknown as Response;
+/**
+ * Returns a mock resolved value for execFile simulating curl success.
+ * curl stdout format: {body}\n{http_status_code}
+ */
+function curlOk(html: string, status = 200): Promise<{ stdout: string }> {
+  return Promise.resolve({ stdout: `${html}\n${status}` });
 }
 
-function makeErrorResponse(status: number, statusText: string): Response {
-  return { ok: false, status, statusText } as unknown as Response;
+/**
+ * Returns a mock resolved value for execFile simulating a curl HTTP error response.
+ * curl exits 0 even on HTTP errors; it only exits non-zero on network failures.
+ */
+function curlHttpError(status: number): Promise<{ stdout: string }> {
+  return Promise.resolve({ stdout: `\n${status}` });
+}
+
+/**
+ * Returns a mock rejection simulating a curl process-level failure
+ * (DNS failure, timeout, binary not found, etc.).
+ */
+function curlNetworkError(message: string): Promise<never> {
+  return Promise.reject(new Error(message));
 }
 
 describe("SiteBlockedError", () => {
@@ -59,7 +95,7 @@ describe("scrapePage", () => {
       "<article><p>Some recipe content that is long enough to be considered valid content for the scraper to pick up and use as the main text body of the page.</p></article>",
       '<meta property="og:title" content="My Great Recipe" />'
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -71,7 +107,7 @@ describe("scrapePage", () => {
       "<article><p>Some recipe content that is long enough to be considered valid content for the scraper.</p></article>",
       "<title>Fallback Title</title>"
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -83,7 +119,7 @@ describe("scrapePage", () => {
       "<p>Content</p>",
       '<meta property="og:image" content="https://example.com/photo.jpg" />'
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -92,7 +128,7 @@ describe("scrapePage", () => {
 
   it("returns null imageUrl when no image candidates exist", async () => {
     const html = makeHtml("<p>No images here</p>");
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -109,7 +145,7 @@ describe("scrapePage", () => {
       "<p>Body text</p>",
       `<script type="application/ld+json">${jsonLd}</script>`
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -128,7 +164,7 @@ describe("scrapePage", () => {
       "<p>Body text</p>",
       `<script type="application/ld+json">${jsonLd}</script>`
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -138,7 +174,7 @@ describe("scrapePage", () => {
   it("falls back to article/recipe selectors when no JSON-LD", async () => {
     const longContent = "A ".repeat(150) + "recipe content here";
     const html = makeHtml(`<article>${longContent}</article>`);
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -147,7 +183,7 @@ describe("scrapePage", () => {
 
   it("falls back to body text as last resort", async () => {
     const html = makeHtml("<p>Just a simple paragraph</p>");
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -155,106 +191,131 @@ describe("scrapePage", () => {
   });
 
   it("throws on non-OK, non-403/401 response without retrying", async () => {
-    mockFetch.mockResolvedValue(makeErrorResponse(404, "Not Found"));
+    mockExecFile.mockReturnValue(curlHttpError(404));
 
     await expect(scrapePage("https://example.com/missing")).rejects.toThrow(
-      "404 Not Found"
+      "404"
     );
     // Should only attempt once since 404 is not retryable
-    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
   });
 
   it("throws SiteBlockedError after all retry strategies fail with 403", async () => {
-    mockFetch.mockResolvedValue(makeErrorResponse(403, "Forbidden"));
+    mockExecFile.mockReturnValue(curlHttpError(403));
 
     const err = await scrapePage("https://example.com/blocked").catch((e) => e);
     expect(err).toBeInstanceOf(SiteBlockedError);
     expect(err.status).toBe(403);
-    expect(err.message).toContain("403 Forbidden");
+    expect(err.message).toContain("403");
     // Should attempt all 3 strategies
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockExecFile).toHaveBeenCalledTimes(3);
   });
 
   it("throws SiteBlockedError after all retry strategies fail with 401", async () => {
-    mockFetch.mockResolvedValue(makeErrorResponse(401, "Unauthorized"));
+    mockExecFile.mockReturnValue(curlHttpError(401));
 
     const err = await scrapePage("https://example.com/private").catch((e) => e);
     expect(err).toBeInstanceOf(SiteBlockedError);
     expect(err.status).toBe(401);
     // Should attempt all 3 strategies
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockExecFile).toHaveBeenCalledTimes(3);
   });
 
   it("succeeds on second strategy if first returns 403", async () => {
     const html = makeHtml("<p>Content only visible to referer requests</p>");
-    mockFetch
-      .mockResolvedValueOnce(makeErrorResponse(403, "Forbidden"))
-      .mockResolvedValueOnce(makeOkResponse(html));
+    mockExecFile
+      .mockReturnValueOnce(curlHttpError(403))
+      .mockReturnValueOnce(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
     expect(result.content).toContain("Content only visible to referer requests");
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockExecFile).toHaveBeenCalledTimes(2);
   });
 
   it("succeeds on third strategy if first two return 403", async () => {
     const html = makeHtml("<p>Allowed on minimal headers</p>");
-    mockFetch
-      .mockResolvedValueOnce(makeErrorResponse(403, "Forbidden"))
-      .mockResolvedValueOnce(makeErrorResponse(403, "Forbidden"))
-      .mockResolvedValueOnce(makeOkResponse(html));
+    mockExecFile
+      .mockReturnValueOnce(curlHttpError(403))
+      .mockReturnValueOnce(curlHttpError(403))
+      .mockReturnValueOnce(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
     expect(result.content).toContain("Allowed on minimal headers");
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(mockExecFile).toHaveBeenCalledTimes(3);
   });
 
-  it("sends browser-like headers including User-Agent and Accept-Language on first attempt", async () => {
-    const html = makeHtml("<p>Content</p>");
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+  it("passes the URL as the last curl argument", async () => {
+    mockExecFile.mockReturnValue(curlOk(makeHtml("<p>Content</p>")));
 
     await scrapePage("https://example.com/recipe");
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["User-Agent"]).toContain("Mozilla/5.0");
-    expect(headers["Accept-Language"]).toBeTruthy();
-    expect(headers["Upgrade-Insecure-Requests"]).toBe("1");
+    const [cmd, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(cmd).toBe("curl");
+    expect(args[args.length - 1]).toBe("https://example.com/recipe");
   });
 
-  it("includes Sec-Fetch-* and Sec-CH-UA headers on first attempt", async () => {
-    const html = makeHtml("<p>Content</p>");
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+  it("passes --location flag to follow redirects", async () => {
+    mockExecFile.mockReturnValue(curlOk(makeHtml("<p>Content</p>")));
 
     await scrapePage("https://example.com/recipe");
 
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    const headers = init.headers as Record<string, string>;
-    expect(headers["Sec-Fetch-Dest"]).toBe("document");
-    expect(headers["Sec-Fetch-Mode"]).toBe("navigate");
-    expect(headers["Sec-CH-UA"]).toContain("Chrome");
+    const [, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--location");
+  });
+
+  it("passes --compressed flag for automatic decompression", async () => {
+    mockExecFile.mockReturnValue(curlOk(makeHtml("<p>Content</p>")));
+
+    await scrapePage("https://example.com/recipe");
+
+    const [, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--compressed");
+  });
+
+  it("passes User-Agent header in curl -H arguments", async () => {
+    mockExecFile.mockReturnValue(curlOk(makeHtml("<p>Content</p>")));
+
+    await scrapePage("https://example.com/recipe");
+
+    const [, args] = mockExecFile.mock.calls[0] as [string, string[]];
+    const headerArgs = args.filter((_, i) => args[i - 1] === "-H");
+    const uaHeader = headerArgs.find((h) => h.startsWith("User-Agent:"));
+    expect(uaHeader).toBeTruthy();
+    expect(uaHeader).toContain("Mozilla/5.0");
   });
 
   it("includes a Referer header on second strategy attempt", async () => {
     const html = makeHtml("<p>Content</p>");
-    mockFetch
-      .mockResolvedValueOnce(makeErrorResponse(403, "Forbidden"))
-      .mockResolvedValueOnce(makeOkResponse(html));
+    mockExecFile
+      .mockReturnValueOnce(curlHttpError(403))
+      .mockReturnValueOnce(curlOk(html));
 
     await scrapePage("https://example.com/recipe");
 
-    const [, secondInit] = mockFetch.mock.calls[1] as [string, RequestInit];
-    const headers = secondInit.headers as Record<string, string>;
-    expect(headers["Referer"]).toBeTruthy();
-    expect(headers["Referer"]).toContain("example.com");
+    const [, secondArgs] = mockExecFile.mock.calls[1] as [string, string[]];
+    const headerArgs = secondArgs.filter((_, i) => secondArgs[i - 1] === "-H");
+    const refererHeader = headerArgs.find((h) => h.startsWith("Referer:"));
+    expect(refererHeader).toBeTruthy();
+    expect(refererHeader).toContain("example.com");
+  });
+
+  it("throws network error immediately without retrying", async () => {
+    mockExecFile.mockReturnValue(curlNetworkError("Connection timeout"));
+
+    await expect(scrapePage("https://example.com/recipe")).rejects.toThrow(
+      "Connection timeout"
+    );
+    // Network errors should not trigger header retries
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
   });
 
   it("removes script and style tags from content", async () => {
     const html = makeHtml(
       '<p>Visible content</p><script>alert("xss")</script><style>.hidden{}</style>'
     );
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
@@ -265,7 +326,7 @@ describe("scrapePage", () => {
 
   it("cleans up excess whitespace in content", async () => {
     const html = makeHtml("<p>Word1    \n\n\n   Word2</p>");
-    mockFetch.mockResolvedValue(makeOkResponse(html));
+    mockExecFile.mockReturnValue(curlOk(html));
 
     const result = await scrapePage("https://example.com/recipe");
 
