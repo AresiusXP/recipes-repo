@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.6] — 2026-04-13
+
+_App release_
+
+- fix(scraper): use curl to bypass TLS fingerprint blocking
+- chore: bump chart and update changelog for v0.5.5 [skip ci]
+
 ## [0.5.5] — 2026-04-13
 
 _App release_
