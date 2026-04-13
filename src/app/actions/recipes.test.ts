@@ -68,6 +68,17 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/scraper", () => ({
   scrapePage: (...args: unknown[]) => mockScrapePage(...args),
+  // Export the real SiteBlockedError class so tests can throw it
+  SiteBlockedError: class SiteBlockedError extends Error {
+    readonly status: number;
+    readonly statusText: string;
+    constructor(status: number, statusText: string) {
+      super(`This site blocked automated fetching (${status} ${statusText})`);
+      this.name = "SiteBlockedError";
+      this.status = status;
+      this.statusText = statusText;
+    }
+  },
 }));
 
 vi.mock("@/lib/gemini", () => ({
@@ -146,6 +157,20 @@ describe("importRecipeFromUrl", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("Could not fetch the page");
     expect(result.error).toContain("Connection timeout");
+  });
+
+  it("returns siteBlocked result when scraping encounters SiteBlockedError", async () => {
+    // Import the mocked SiteBlockedError class from the mock factory
+    const { SiteBlockedError } = await import("@/lib/scraper");
+    mockScrapePage.mockRejectedValue(new SiteBlockedError(403, "Forbidden"));
+
+    const result = await importRecipeFromUrl("https://example.com/blocked");
+
+    expect(result.success).toBe(false);
+    expect(result.siteBlocked).toBe(true);
+    expect(result.blockedUrl).toBe("https://example.com/blocked");
+    expect(result.error).toContain("403");
+    expect(result.error).toContain("Paste Recipe Text");
   });
 
   it("returns error when Gemini extraction fails", async () => {

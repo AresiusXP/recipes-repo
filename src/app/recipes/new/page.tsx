@@ -20,6 +20,7 @@ export default function NewRecipePage() {
   const [textSourceUrl, setTextSourceUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [siteBlocked, setSiteBlocked] = useState(false);
 
   // Image picker state (text mode only)
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -47,6 +48,20 @@ export default function NewRecipePage() {
     }
     setMode(next);
     setError(null);
+    setSiteBlocked(false);
+  }
+
+  /** Switch to text mode and pre-fill the source URL with the blocked URL. */
+  function switchToTextWithUrl() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setImageFile(null);
+    setImageMessage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setTextSourceUrl(url);
+    setMode("text");
+    setError(null);
+    setSiteBlocked(false);
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,6 +97,7 @@ export default function NewRecipePage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSiteBlocked(false);
 
     try {
       const result =
@@ -91,6 +107,9 @@ export default function NewRecipePage() {
 
       if (result.success && result.recipeId) {
         router.push(`/recipes/${result.recipeId}`);
+      } else if (result.siteBlocked) {
+        setSiteBlocked(true);
+        setError(result.error || "This website doesn't allow automated import.");
       } else {
         setError(result.error || "Failed to import recipe");
       }
@@ -255,8 +274,62 @@ export default function NewRecipePage() {
         )}
 
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            {error}
+          <div
+            className={`rounded-lg border p-3 text-sm ${
+              siteBlocked
+                ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+            }`}
+          >
+            <p>{error}</p>
+            {siteBlocked && mode === "url" && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={switchToTextWithUrl}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-200 dark:bg-amber-900 dark:text-amber-100 dark:hover:bg-amber-800"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="h-3.5 w-3.5"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M15.621 4.379a3 3 0 0 0-4.242 0l-7 7a3 3 0 0 0 4.241 4.243h.001l.497-.5a.75.75 0 0 1 1.064 1.057l-.498.501-.002.002a4.5 4.5 0 0 1-6.364-6.364l7-7a4.5 4.5 0 0 1 6.368 6.36l-3.455 3.553A2.625 2.625 0 1 1 9.52 9.52l3.45-3.451a.75.75 0 1 1 1.061 1.06l-3.45 3.451a1.125 1.125 0 0 0 1.587 1.595l3.454-3.553a3 3 0 0 0 0-4.242Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Switch to paste text (URL saved)
+                </button>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="h-3.5 w-3.5"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"
+                      clipRule="evenodd"
+                    />
+                    <path
+                      fillRule="evenodd"
+                      d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Open page in new tab
+                </a>
+              </div>
+            )}
           </div>
         )}
 

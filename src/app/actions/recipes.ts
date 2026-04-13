@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
-import { scrapePage } from "@/lib/scraper";
+import { scrapePage, SiteBlockedError } from "@/lib/scraper";
 import { extractRecipeWithGemini, type TargetLanguage } from "@/lib/gemini";
 import { downloadImage, deleteImage, duplicateImage, saveUploadedImage, isLocalMediaPath } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
@@ -17,6 +17,10 @@ export interface ImportResult {
   success: boolean;
   recipeId?: string;
   error?: string;
+  /** True when the site actively blocked the automated import request. */
+  siteBlocked?: boolean;
+  /** The URL that was attempted (only set when siteBlocked is true). */
+  blockedUrl?: string;
   preview?: {
     title: string;
     description: string;
@@ -70,8 +74,16 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
       scraped = await scrapePage(url);
       log.debug({ url, contentLength: scraped.content.length, hasImage: !!scraped.imageUrl }, "Page scraped successfully");
     } catch (scrapeError) {
-      const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
       log.warn({ url, err: serializeError(scrapeError) }, "Page scraping failed");
+      if (scrapeError instanceof SiteBlockedError) {
+        return {
+          success: false,
+          siteBlocked: true,
+          blockedUrl: url,
+          error: `This website doesn't allow automated import (${scrapeError.status}). Open the page in your browser, copy all the recipe text, then use "Paste Recipe Text" to import it.`,
+        };
+      }
+      const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
       return {
         success: false,
         error: `Could not fetch the page: ${msg}. Try pasting the recipe text manually.`,

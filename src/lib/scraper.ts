@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import pino from "pino";
 import { logger } from "@/lib/logger";
 
 export interface ScrapedPage {
@@ -8,6 +9,153 @@ export interface ScrapedPage {
 }
 
 /**
+ * A structured error for when a site actively blocks automated fetching.
+ * Distinguishes from generic network or server errors.
+ */
+export class SiteBlockedError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+
+  constructor(status: number, statusText: string) {
+    super(`This site blocked automated fetching (${status} ${statusText})`);
+    this.name = "SiteBlockedError";
+    this.status = status;
+    this.statusText = statusText;
+  }
+}
+
+// ─── Request header presets ───
+
+/**
+ * Headers that closely mimic a Chrome 135 browser navigation request.
+ * These are the full set of headers Chromium sends for a top-level navigation.
+ */
+function makeBrowserHeaders(url: string, referer?: string): Record<string, string> {
+  const parsed = new URL(url);
+  const origin = parsed.origin;
+
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    "Accept":
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": referer ? "same-origin" : "none",
+    "Sec-Fetch-User": "?1",
+    "Sec-CH-UA": '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
+    "DNT": "1",
+    ...(referer ? { "Referer": referer } : {}),
+    // Some CDNs check the Host via Origin header on first-party navigation
+    "Origin": origin,
+  };
+}
+
+/**
+ * Minimal fallback headers (the old behaviour) for sites that don't care
+ * about the full browser fingerprint.
+ */
+function makeMinimalHeaders(): Record<string, string> {
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    "Accept":
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+  };
+}
+
+// ─── Fetch with retry ───
+
+interface FetchAttempt {
+  headers: Record<string, string>;
+  label: string;
+}
+
+/**
+ * Fetches a URL with a sequence of header strategies.
+ * Returns the first successful response, or throws the last error.
+ */
+async function fetchWithStrategies(
+  url: string,
+  log: pino.Logger
+): Promise<Response> {
+  const parsed = new URL(url);
+  const homepageReferer = `${parsed.origin}/`;
+
+  const attempts: FetchAttempt[] = [
+    // Strategy 1: full browser fingerprint, no referer (simulates typing URL in address bar)
+    {
+      label: "browser-direct",
+      headers: makeBrowserHeaders(url),
+    },
+    // Strategy 2: full browser fingerprint, with same-site homepage referer (simulates clicking a link)
+    {
+      label: "browser-with-referer",
+      headers: makeBrowserHeaders(url, homepageReferer),
+    },
+    // Strategy 3: minimal/old headers (last resort)
+    {
+      label: "minimal",
+      headers: makeMinimalHeaders(),
+    },
+  ];
+
+  let lastStatus = 0;
+  let lastStatusText = "";
+
+  for (const attempt of attempts) {
+    log.debug({ strategy: attempt.label }, "Attempting fetch");
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: attempt.headers,
+        redirect: "follow",
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      // Network-level error (timeout, DNS, etc.) — don't retry with headers
+      throw err;
+    }
+
+    if (response.ok) {
+      log.debug({ strategy: attempt.label, status: response.status }, "Fetch succeeded");
+      return response;
+    }
+
+    lastStatus = response.status;
+    lastStatusText = response.statusText;
+
+    log.warn(
+      { strategy: attempt.label, status: response.status, statusText: response.statusText },
+      "Fetch attempt returned non-OK status"
+    );
+
+    // Only retry on 403/401 — other errors (404, 5xx) won't improve with different headers
+    if (response.status !== 403 && response.status !== 401) {
+      break;
+    }
+  }
+
+  // All strategies exhausted or a non-retryable status was encountered
+  if (lastStatus === 403 || lastStatus === 401) {
+    throw new SiteBlockedError(lastStatus, lastStatusText);
+  }
+  throw new Error(`${lastStatus} ${lastStatusText}`);
+}
+
+// ─── Main scraper ───
+
+/**
  * Fetches a web page and extracts the main text content and best image.
  */
 export async function scrapePage(url: string): Promise<ScrapedPage> {
@@ -15,27 +163,7 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
 
   log.debug("Fetching page");
 
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Upgrade-Insecure-Requests": "1",
-    },
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!response.ok) {
-    log.warn({ status: response.status, statusText: response.statusText }, "Page fetch returned non-OK status");
-    if (response.status === 403 || response.status === 401) {
-      throw new Error(
-        `This site blocked automated fetching (${response.status} ${response.statusText})`
-      );
-    }
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
+  const response = await fetchWithStrategies(url, log);
 
   const html = await response.text();
   const $ = cheerio.load(html);
