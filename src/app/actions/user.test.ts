@@ -16,6 +16,9 @@ const {
       findUnique: vi.fn(),
       update: vi.fn(),
     },
+    account: {
+      findMany: vi.fn(),
+    },
   },
   mockSaveUploadedImage: vi.fn(),
   mockDeleteImage: vi.fn(),
@@ -62,6 +65,7 @@ vi.mock("@/lib/logger", () => ({
 
 import {
   getUserSettings,
+  getLinkedAccounts,
   uploadProfileImage,
   removeProfileImage,
   updateUserSettings,
@@ -107,6 +111,39 @@ describe("getUserSettings", () => {
       autoTranslateLanguage: null,
       themePreference: "system",
     });
+  });
+});
+
+describe("getLinkedAccounts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("returns linked providers for the current user", async () => {
+    mockPrisma.account.findMany.mockResolvedValue([
+      { provider: "google" },
+      { provider: "microsoft-entra-id" },
+    ]);
+
+    const result = await getLinkedAccounts();
+
+    expect(result).toEqual([
+      { provider: "google" },
+      { provider: "microsoft-entra-id" },
+    ]);
+    expect(mockPrisma.account.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      select: { provider: true },
+    });
+  });
+
+  it("returns an empty array when the user has no linked accounts", async () => {
+    mockPrisma.account.findMany.mockResolvedValue([]);
+
+    const result = await getLinkedAccounts();
+
+    expect(result).toEqual([]);
   });
 });
 

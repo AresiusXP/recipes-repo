@@ -2,26 +2,43 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import {
   updateUserSettings,
   uploadProfileImage,
   removeProfileImage,
   type UserSettings,
   type AutoTranslateLanguage,
+  type LinkedAccount,
 } from "@/app/actions/user";
+import { type ProviderInfo } from "@/lib/auth";
 import { applyTheme } from "@/lib/theme";
 
 interface SettingsFormProps {
   initialSettings: UserSettings;
+  linkedAccounts: LinkedAccount[];
+  configuredProviders: ProviderInfo[];
+  linkedParam?: string;
+  errorParam?: string;
 }
 
-export function SettingsForm({ initialSettings }: SettingsFormProps) {
+export function SettingsForm({
+  initialSettings,
+  linkedAccounts,
+  configuredProviders,
+  linkedParam,
+  errorParam,
+}: SettingsFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialSettings.name || "");
   const [autoTranslateLanguage, setAutoTranslateLanguage] = useState<AutoTranslateLanguage>(initialSettings.autoTranslateLanguage);
   const [themePreference, setThemePreference] = useState(initialSettings.themePreference);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Linking state
+  const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
+  const linkedProviderIds = new Set(linkedAccounts.map((a) => a.provider));
 
   // Avatar state
   const [currentImage, setCurrentImage] = useState<string | null>(initialSettings.image);
@@ -277,6 +294,83 @@ export function SettingsForm({ initialSettings }: SettingsFormProps) {
           </div>
         )}
       </div>
+
+      {/* Linked Accounts Section */}
+      {configuredProviders.length > 0 && (
+        <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
+          <h2 className="mb-1 text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            Linked Accounts
+          </h2>
+          <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
+            Link additional sign-in providers to your account. You can then sign
+            in with any of them.
+          </p>
+
+          {/* Success / error feedback from redirect */}
+          {linkedParam && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+              {configuredProviders.find((p) => p.id === linkedParam)?.name ?? linkedParam} account linked successfully.
+            </div>
+          )}
+          {errorParam === "OAuthAccountNotLinked" && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+              That account is already linked to a different user. Please use a different account.
+            </div>
+          )}
+          {errorParam && errorParam !== "OAuthAccountNotLinked" && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+              An error occurred while linking your account. Please try again.
+            </div>
+          )}
+
+          <ul className="space-y-3">
+            {configuredProviders.map((provider) => {
+              const isLinked = linkedProviderIds.has(provider.id);
+              return (
+                <li
+                  key={provider.id}
+                  className="flex items-center justify-between gap-4 rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800"
+                >
+                  <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                    {provider.name}
+                  </span>
+                  {isLinked ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 16 16"
+                        fill="currentColor"
+                        className="h-3 w-3"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      Connected
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={linkingProvider !== null}
+                      onClick={async () => {
+                        setLinkingProvider(provider.id);
+                        await signIn(provider.id, {
+                          callbackUrl: `/settings?linked=${provider.id}`,
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+                    >
+                      {linkingProvider === provider.id ? "Redirecting…" : "Link"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Settings Form */}
       <form onSubmit={handleSubmit} className="space-y-6">

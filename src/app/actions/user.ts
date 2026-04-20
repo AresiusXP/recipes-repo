@@ -18,6 +18,10 @@ export interface UserSettings {
   themePreference: string;
 }
 
+export interface LinkedAccount {
+  provider: string;
+}
+
 // ─── Get user settings ───
 
 export const getUserSettings = cache(async (): Promise<UserSettings> => {
@@ -34,6 +38,19 @@ export const getUserSettings = cache(async (): Promise<UserSettings> => {
     autoTranslateLanguage: (user?.autoTranslateLanguage ?? null) as AutoTranslateLanguage,
     themePreference: user?.themePreference ?? "system",
   };
+});
+
+// ─── Get linked OAuth accounts ───
+
+export const getLinkedAccounts = cache(async (): Promise<LinkedAccount[]> => {
+  const session = await requireAuth();
+
+  const accounts = await prisma.account.findMany({
+    where: { userId: session.user.id },
+    select: { provider: true },
+  });
+
+  return accounts.map((a) => ({ provider: a.provider }));
 });
 
 // ─── Get theme preference safely ───

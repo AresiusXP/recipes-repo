@@ -72,6 +72,20 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.existingSecret }}
                   key: {{ .Values.secrets.keys.googleClientSecret }}
+            {{- if .Values.secrets.keys.microsoftEntraIdClientId }}
+            - name: MICROSOFT_ENTRA_ID_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.keys.microsoftEntraIdClientId }}
+            - name: MICROSOFT_ENTRA_ID_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: {{ .Values.secrets.keys.microsoftEntraIdClientSecret }}
+            - name: MICROSOFT_ENTRA_ID_ISSUER
+              value: {{ .Values.config.microsoftEntraIdIssuer | default "https://login.microsoftonline.com/common/v2.0" | quote }}
+            {{- end }}
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

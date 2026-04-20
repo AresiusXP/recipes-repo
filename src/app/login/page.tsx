@@ -1,6 +1,7 @@
-import { auth } from "@/lib/auth";
+import { auth, getConfiguredProviders } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { MicrosoftSignInButton } from "@/components/MicrosoftSignInButton";
 
 interface LoginPageProps {
   searchParams: Promise<{ error?: string }>;
@@ -14,6 +15,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   const { error } = await searchParams;
   const isRegistrationBlocked = error === "RegistrationNotAllowed";
+  const isAccountLinkError = error === "OAuthAccountNotLinked";
+
+  const configuredProviders = getConfiguredProviders();
+  const isGoogleEnabled = configuredProviders.some((p) => p.id === "google");
+  const isMicrosoftEnabled = configuredProviders.some((p) => p.id === "microsoft-entra-id");
+  const hasAnyProvider = configuredProviders.length > 0;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-background dark:from-zinc-900 dark:to-background px-4">
@@ -33,7 +40,29 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </div>
         )}
 
-        <GoogleSignInButton />
+        {isAccountLinkError && (
+          <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+            <p className="font-medium">Account already exists</p>
+            <p className="mt-1">
+              An account with this email address already exists under a different
+              sign-in provider. Sign in with the provider you originally used,
+              then go to{" "}
+              <span className="font-medium">Settings → Linked Accounts</span> to
+              connect your other account.
+            </p>
+          </div>
+        )}
+
+        {hasAnyProvider ? (
+          <div className="flex flex-col gap-3">
+            {isGoogleEnabled && <GoogleSignInButton />}
+            {isMicrosoftEnabled && <MicrosoftSignInButton />}
+          </div>
+        ) : (
+          <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
+            No sign-in providers are configured. Please contact the administrator.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -37,6 +37,9 @@ config:
   logLevel: "info"
   # Application name embedded in every log line (useful for multi-app Loki setups)
   appName: "recipes-repo"
+  # Microsoft Entra ID issuer — controls which Microsoft accounts may log in.
+  # Defaults to "common" (personal + work/school) when left empty.
+  microsoftEntraIdIssuer: "https://login.microsoftonline.com/common/v2.0"
 
 # Secret references — these must exist in the cluster
 # Create them with:
@@ -45,6 +48,10 @@ config:
 #     --from-literal=google-client-id='<your-id>' \
 #     --from-literal=google-client-secret='<your-secret>' \
 #     --from-literal=gemini-api-key='<your-key>'
+#
+# To also enable Microsoft login, add:
+#     --from-literal=microsoft-entra-id-client-id='<your-entra-client-id>' \
+#     --from-literal=microsoft-entra-id-client-secret='<your-entra-client-secret>'
 secrets:
   # Name of the Kubernetes Secret containing app credentials
   existingSecret: "recipes-repo-secrets"
@@ -53,6 +60,16 @@ secrets:
     googleClientId: "google-client-id"
     googleClientSecret: "google-client-secret"
     geminiApiKey: "gemini-api-key"
+    # Set these to enable Microsoft Entra ID (Azure AD) login.
+    # Leave empty ("") to disable Microsoft login entirely.
+    microsoftEntraIdClientId: ""
+    microsoftEntraIdClientSecret: ""
+
+# config.microsoftEntraIdIssuer controls which Microsoft accounts may log in:
+#   https://login.microsoftonline.com/common/v2.0      — personal + work/school (default)
+#   https://login.microsoftonline.com/consumers/v2.0   — personal accounts only
+#   https://login.microsoftonline.com/organizations/v2.0 — work/school only
+#   https://login.microsoftonline.com/<tenant-id>/v2.0 — single tenant
 
 service:
   type: ClusterIP

@@ -1,10 +1,42 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 
 const log = logger.child({ component: "auth" });
+
+/**
+ * Lightweight, serialisable description of a configured OAuth provider.
+ * Safe to pass to client components.
+ */
+export interface ProviderInfo {
+  id: string;
+  name: string;
+}
+
+/**
+ * Returns the list of OAuth providers that are currently enabled based on
+ * the available environment variables. Used by the login page and settings
+ * to render only the providers that are actually configured.
+ */
+export function getConfiguredProviders(): ProviderInfo[] {
+  const providers: ProviderInfo[] = [];
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push({ id: "google", name: "Google" });
+  }
+
+  if (
+    process.env.MICROSOFT_ENTRA_ID_CLIENT_ID &&
+    process.env.MICROSOFT_ENTRA_ID_CLIENT_SECRET
+  ) {
+    providers.push({ id: "microsoft-entra-id", name: "Microsoft" });
+  }
+
+  return providers;
+}
 
 /**
  * Parse the ALLOWED_EMAILS env var into a Set of lowercase emails.
@@ -18,15 +50,46 @@ function getAllowedEmails(): Set<string> | null {
   );
 }
 
+/**
+ * Build the list of enabled OAuth providers based on available env vars.
+ * This allows deployments to configure only the providers they need.
+ */
+function buildProviders() {
+  const providers = [];
+
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    providers.push(
+      Google({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      })
+    );
+  }
+
+  if (
+    process.env.MICROSOFT_ENTRA_ID_CLIENT_ID &&
+    process.env.MICROSOFT_ENTRA_ID_CLIENT_SECRET
+  ) {
+    providers.push(
+      MicrosoftEntraID({
+        clientId: process.env.MICROSOFT_ENTRA_ID_CLIENT_ID,
+        clientSecret: process.env.MICROSOFT_ENTRA_ID_CLIENT_SECRET,
+        // "common" allows both personal (MSN/Outlook/Hotmail) and
+        // work/school Microsoft accounts. Override via env var if needed.
+        issuer:
+          process.env.MICROSOFT_ENTRA_ID_ISSUER ||
+          "https://login.microsoftonline.com/common/v2.0",
+      })
+    );
+  }
+
+  return providers;
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   adapter: PrismaAdapter(prisma),
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-  ],
+  providers: buildProviders(),
   pages: {
     signIn: "/login",
   },
