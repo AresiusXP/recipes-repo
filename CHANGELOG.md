@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] — 2026-04-20
+
+_App release_
+
+- feat(auth): add Microsoft sign-in and account linking
+- chore: bump chart and update changelog for v0.5.6 [skip ci]
+
 ## [0.5.6] — 2026-04-13
 
 _App release_
