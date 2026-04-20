@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] — 2026-04-21
+
+_App release_
+
+- fix(security): add Content-Security-Policy header
+- fix(deps): patch Next.js App Router DoS vulnerability
+- chore: bump chart and update changelog for v0.6.1 [skip ci]
+- chore: bump chart and update changelog for v0.6.0 [skip ci]
+
 ## [0.6.1] — 2026-04-20
 
 _App release_
