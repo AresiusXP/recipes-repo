@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.1] — 2026-04-20
+
+_App release_
+
+- fix(deps): patch Next.js App Router DoS vulnerability
+
 ## [0.6.0] — 2026-04-20
 
 _App release_
