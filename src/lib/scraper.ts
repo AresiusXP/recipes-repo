@@ -238,12 +238,18 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
   let content = "";
   let foundJsonLd = false;
   $('script[type="application/ld+json"]').each((_, el) => {
+    if (foundJsonLd) return; // already found a good one
     try {
       const data = JSON.parse($(el).text());
       const recipes = findRecipeJsonLd(data);
-      if (recipes.length > 0) {
-        content = JSON.stringify(recipes[0], null, 2);
-        foundJsonLd = true;
+      // Try each recipe in the script tag; use the first one that passes quality checks.
+      for (const recipe of recipes) {
+        const cleaned = cleanRecipeJsonLd(recipe);
+        if (isUsableRecipeJsonLd(cleaned)) {
+          content = JSON.stringify(cleaned, null, 2);
+          foundJsonLd = true;
+          break;
+        }
       }
     } catch {
       // ignore malformed JSON-LD
@@ -348,4 +354,61 @@ function findRecipeJsonLd(data: any): any[] {
     return findRecipeJsonLd(data["@graph"]);
   }
   return [];
+}
+
+/**
+ * Returns a cleaned copy of a Recipe JSON-LD object, keeping only fields that
+ * are useful for recipe extraction and discarding noisy/bulky metadata such as
+ * comments, reviews, ratings, and author bios.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleanRecipeJsonLd(recipe: any): any {
+  const KEEP_FIELDS = new Set([
+    "@context", "@type", "@id",
+    "name", "description",
+    "recipeIngredient", "recipeInstructions",
+    "recipeYield", "recipeCategory", "recipeCuisine",
+    "cookTime", "prepTime", "totalTime",
+    "keywords", "image", "url",
+    "nutrition",
+  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cleaned: any = {};
+  for (const key of Object.keys(recipe)) {
+    if (KEEP_FIELDS.has(key)) {
+      cleaned[key] = recipe[key];
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * Returns true when a (cleaned) Recipe JSON-LD object has enough real recipe
+ * content to be worth sending to Gemini instead of falling back to DOM text.
+ *
+ * Minimum bar:
+ * - At least 2 ingredients that look like real ingredient strings (not a single
+ *   comma-separated blob), OR
+ * - At least 1 instruction step
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isUsableRecipeJsonLd(recipe: any): boolean {
+  const ingredients: unknown = recipe.recipeIngredient;
+  const instructions: unknown = recipe.recipeInstructions;
+
+  // Check instructions
+  const hasInstructions =
+    (Array.isArray(instructions) && instructions.length > 0) ||
+    (typeof instructions === "string" && instructions.trim().length > 20);
+
+  // Check ingredients: count valid (non-empty string) items; require at least 2.
+  // Using filter instead of every so that occasional null/empty entries in an
+  // otherwise valid list don't cause the whole JSON-LD to be rejected.
+  const validIngredients = Array.isArray(ingredients)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? ingredients.filter((i: any) => typeof i === "string" && i.trim().length > 0)
+    : [];
+  const hasIngredients = validIngredients.length >= 2;
+
+  return hasInstructions || hasIngredients;
 }

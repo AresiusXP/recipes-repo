@@ -139,7 +139,8 @@ describe("scrapePage", () => {
     const jsonLd = JSON.stringify({
       "@type": "Recipe",
       name: "Test Recipe",
-      recipeIngredient: ["1 cup flour"],
+      recipeIngredient: ["240ml flour", "2 eggs"],
+      recipeInstructions: [{ "@type": "HowToStep", text: "Mix flour and eggs" }],
     });
     const html = makeHtml(
       "<p>Body text</p>",
@@ -150,14 +151,14 @@ describe("scrapePage", () => {
     const result = await scrapePage("https://example.com/recipe");
 
     expect(result.content).toContain("Test Recipe");
-    expect(result.content).toContain("1 cup flour");
+    expect(result.content).toContain("240ml flour");
   });
 
   it("extracts recipe from @graph JSON-LD", async () => {
     const jsonLd = JSON.stringify({
       "@graph": [
         { "@type": "WebPage", name: "Page" },
-        { "@type": "Recipe", name: "Graph Recipe", recipeIngredient: ["2 eggs"] },
+        { "@type": "Recipe", name: "Graph Recipe", recipeIngredient: ["2 eggs", "100g butter"] },
       ],
     });
     const html = makeHtml(
@@ -331,5 +332,120 @@ describe("scrapePage", () => {
     const result = await scrapePage("https://example.com/recipe");
 
     expect(result.content).toBe("Word1 Word2");
+  });
+
+  // ─── JSON-LD quality gating ───
+
+  it("falls back to article text when JSON-LD Recipe has no instructions and only one ingredient blob", async () => {
+    // Simulates paulinacocina.net-style pages: Recipe JSON-LD exists but has no
+    // recipeInstructions and a single comma-separated ingredient string.
+    const jsonLd = JSON.stringify({
+      "@type": "Recipe",
+      name: "Tortilla de papas",
+      description: "Una receta clásica",
+      recipeIngredient: ["cebolla, huevos, papas"],
+      // no recipeInstructions
+      comment: [{ "@type": "Comment", description: "Muy rica!" }],
+    });
+    const articleText = "A ".repeat(150) + "real recipe steps here";
+    const html = makeHtml(
+      `<article>${articleText}</article>`,
+      `<script type="application/ld+json">${jsonLd}</script>`
+    );
+    mockExecFile.mockReturnValue(curlOk(html));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    // Should use article text, not the sparse JSON-LD
+    expect(result.content).toContain("real recipe steps here");
+    expect(result.content).not.toContain('"recipeIngredient"');
+  });
+
+  it("falls back to article text when JSON-LD Recipe has instructions but only one ingredient blob", async () => {
+    // Single-item ingredient array that is a comma-separated blob is not usable
+    const jsonLd = JSON.stringify({
+      "@type": "Recipe",
+      name: "Tortilla",
+      recipeIngredient: ["cebolla, huevos, papas"],
+      // no recipeInstructions
+    });
+    const articleText = "A ".repeat(150) + "article fallback content";
+    const html = makeHtml(
+      `<article>${articleText}</article>`,
+      `<script type="application/ld+json">${jsonLd}</script>`
+    );
+    mockExecFile.mockReturnValue(curlOk(html));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.content).toContain("article fallback content");
+    expect(result.content).not.toContain('"recipeIngredient"');
+  });
+
+  it("uses JSON-LD when Recipe has proper ingredient list and instructions", async () => {
+    const jsonLd = JSON.stringify({
+      "@type": "Recipe",
+      name: "Good Recipe",
+      recipeIngredient: ["200g flour", "2 eggs", "100ml milk"],
+      recipeInstructions: [
+        { "@type": "HowToStep", text: "Mix flour and eggs" },
+        { "@type": "HowToStep", text: "Add milk and stir" },
+      ],
+    });
+    const html = makeHtml(
+      "<p>Body text</p>",
+      `<script type="application/ld+json">${jsonLd}</script>`
+    );
+    mockExecFile.mockReturnValue(curlOk(html));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.content).toContain("Good Recipe");
+    expect(result.content).toContain("200g flour");
+  });
+
+  it("uses JSON-LD when Recipe has proper ingredient list even without instructions", async () => {
+    const jsonLd = JSON.stringify({
+      "@type": "Recipe",
+      name: "Ingredient-only Recipe",
+      recipeIngredient: ["200g flour", "2 eggs"],
+      // no recipeInstructions
+    });
+    const html = makeHtml(
+      "<p>Body text</p>",
+      `<script type="application/ld+json">${jsonLd}</script>`
+    );
+    mockExecFile.mockReturnValue(curlOk(html));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.content).toContain("Ingredient-only Recipe");
+    expect(result.content).toContain("200g flour");
+  });
+
+  it("strips noisy fields (comments, reviews, ratings) from JSON-LD before using it", async () => {
+    const jsonLd = JSON.stringify({
+      "@type": "Recipe",
+      name: "Clean Recipe",
+      recipeIngredient: ["200g flour", "2 eggs"],
+      recipeInstructions: [{ "@type": "HowToStep", text: "Mix" }],
+      comment: [{ "@type": "Comment", description: "Great!" }],
+      review: [{ "@type": "Review", reviewBody: "Loved it" }],
+      aggregateRating: { "@type": "AggregateRating", ratingValue: "4.5" },
+    });
+    const html = makeHtml(
+      "<p>Body text</p>",
+      `<script type="application/ld+json">${jsonLd}</script>`
+    );
+    mockExecFile.mockReturnValue(curlOk(html));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    // Recipe data should be present
+    expect(result.content).toContain("Clean Recipe");
+    // Noisy fields should be stripped
+    expect(result.content).not.toContain("Great!");
+    expect(result.content).not.toContain("Loved it");
+    expect(result.content).not.toContain("aggregateRating");
   });
 });
