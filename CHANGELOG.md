@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] — 2026-04-28
+
+_App release_
+
+- bug: allowedEmails missing from Helm chart
+- chore: bump chart and update changelog for v0.6.2 [skip ci]
+
 ## [0.6.2] — 2026-04-21
 
 _App release_
