@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { handleSignOut } from "@/app/actions/auth";
 import { UserMenu } from "@/components/UserMenu";
 import { getUnreadNotificationCount } from "@/app/actions/notifications";
+import { isAdminEmail } from "@/lib/admin";
 
 export async function Navbar() {
   const session = await auth();
@@ -15,6 +16,8 @@ export async function Navbar() {
       // non-critical — degrade silently
     }
   }
+
+  const isAdmin = isAdminEmail(session?.user?.email);
 
   return (
     <nav className="sticky top-4 z-50 mx-auto mt-4 w-[calc(100%-2rem)] max-w-4xl rounded-2xl border border-zinc-200/50 bg-white/70 shadow-sm backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-800/50">
@@ -98,6 +101,7 @@ export async function Navbar() {
               userName={session.user.name}
               userImage={session.user.image}
               signOutAction={handleSignOut}
+              isAdmin={isAdmin}
             />
           )}
         </div>

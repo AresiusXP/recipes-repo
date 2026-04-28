@@ -46,6 +46,11 @@ model User {
   autoTranslateLanguage String? // null = off, "en" / "nl" / "es" = auto-translate target
   themePreference  String  @default("system") // "light", "dark", or "system"
 
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+  isBanned    Boolean   @default(false)
+  bannedAt    DateTime?
+
   accounts      Account[]
   sessions      Session[]
   recipes       Recipe[]
