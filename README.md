@@ -180,6 +180,7 @@ See [`helm/recipes-repo/values.yaml`](helm/recipes-repo/values.yaml) for all con
 
 - `image.repository` / `image.tag` — container image (tag defaults to `appVersion`)
 - `config.nextauthUrl` — public URL for OAuth callbacks
+- `config.allowedEmails` — comma-separated email allowlist for new registrations (empty = open)
 - `config.geminiModel` — Gemini model name (default: `gemini-2.0-flash`)
 - `config.microsoftEntraIdIssuer` — Microsoft account scope (default: `common`)
 - `secrets.existingSecret` — name of the Kubernetes Secret
