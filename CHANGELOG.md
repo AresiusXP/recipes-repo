@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] — 2026-04-28
+
+_App release_
+
+- feat: add admin dashboard and moderation controls
+- docs: document Helm allowedEmails configuration
+
 ## [0.7.1] — 2026-04-28
 
 _App release_
