@@ -22,6 +22,9 @@ migrator:
 
 # Application environment configuration
 config:
+  # Empty string means open registration. Otherwise specify which e-mails are allow to register separated by commas
+  # E.g. "test@mail.com,test2@mail.com"
+  allowedEmails: ""
   # Base URL for OAuth callbacks (must match your ingress hostname).
   # Sets both NEXTAUTH_URL and AUTH_URL for Auth.js v5 compatibility.
   # AUTH_TRUST_HOST is always set to "true" to support reverse-proxy deployments.

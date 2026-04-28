@@ -55,6 +55,8 @@ spec:
               value: {{ .Values.config.nextauthUrl | quote }}
             - name: AUTH_URL
               value: {{ .Values.config.nextauthUrl | quote }}
+            - name: ALLOWED_EMAILS
+              value: {{ .Values.config.allowedEmails | quote }}
             - name: AUTH_TRUST_HOST
               value: "true"
             - name: AUTH_SECRET
