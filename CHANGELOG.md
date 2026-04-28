@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.1] — 2026-04-28
+
+_App release_
+
+- 0.7.1
+- feat: show banned-user notice and tighten recipe scraping
+- feat: add admin dashboard and moderation controls
+- docs: document Helm allowedEmails configuration
+
 ## [0.6.3] — 2026-04-28
 
 _App release_
