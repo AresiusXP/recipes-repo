@@ -16,6 +16,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { error } = await searchParams;
   const isRegistrationBlocked = error === "RegistrationNotAllowed";
   const isAccountLinkError = error === "OAuthAccountNotLinked";
+  const isAccountBanned = error === "AccountBanned";
 
   const configuredProviders = getConfiguredProviders();
   const isGoogleEnabled = configuredProviders.some((p) => p.id === "google");
@@ -34,9 +35,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </p>
         </div>
 
+        {isAccountBanned && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+            <p className="font-medium">Account banned</p>
+            <p className="mt-1">
+              Your account has been banned and you are no longer able to sign in.
+              Please contact the administrator if you believe this is a mistake.
+            </p>
+          </div>
+        )}
+
         {isRegistrationBlocked && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            Registration is currently restricted. Your email address is not on the approved list. Please contact the administrator if you believe this is a mistake.
+            <p className="font-medium">Registration restricted</p>
+            <p className="mt-1">
+              Your email address is not on the approved list. Please contact the administrator if you believe this is a mistake.
+            </p>
           </div>
         )}
 
