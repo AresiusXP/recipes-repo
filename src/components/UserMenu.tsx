@@ -7,9 +7,10 @@ interface UserMenuProps {
   userName: string | null | undefined;
   userImage: string | null | undefined;
   signOutAction: () => Promise<void>;
+  isAdmin?: boolean;
 }
 
-export function UserMenu({ userName, userImage, signOutAction }: UserMenuProps) {
+export function UserMenu({ userName, userImage, signOutAction, isAdmin }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -98,6 +99,32 @@ export function UserMenu({ userName, userImage, signOutAction }: UserMenuProps) 
             Settings
           </Link>
           <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />
+          {isAdmin && (
+            <>
+              <Link
+                href="/admin"
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2 px-4 py-2 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="h-4 w-4"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M12 1.5a5.25 5.25 0 1 0 0 10.5 5.25 5.25 0 0 0 0-10.5ZM9.75 6.75a2.25 2.25 0 1 1 4.5 0 2.25 2.25 0 0 1-4.5 0Z"
+                    clipRule="evenodd"
+                  />
+                  <path d="M3 21.75a9 9 0 0 1 18 0H3Z" />
+                </svg>
+                Admin
+              </Link>
+              <div className="my-1 border-t border-zinc-200 dark:border-zinc-700" />
+            </>
+          )}
           <form action={signOutAction}>
             <button
               type="submit"

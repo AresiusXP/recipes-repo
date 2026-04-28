@@ -101,12 +101,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false;
       }
 
-      // Existing users can always sign in
+      // Existing users — check ban status before allowing sign-in
       const existingUser = await prisma.user.findUnique({
         where: { email },
-        select: { id: true },
+        select: { id: true, isBanned: true },
       });
       if (existingUser) {
+        if (existingUser.isBanned) {
+          log.warn({ userId: existingUser.id }, "Sign-in rejected: user is banned");
+          return "/login?error=AccountBanned";
+        }
+        // Update lastLoginAt on successful sign-in
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { lastLoginAt: new Date() },
+        });
         log.info({ userId: existingUser.id }, "Existing user signed in");
         return true;
       }
@@ -130,11 +139,33 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       log.warn("Sign-in rejected: email not on allowlist");
       return "/login?error=RegistrationNotAllowed";
     },
-    session({ session, user }) {
+    async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
       }
+      // Defense in depth: reject sessions for banned users even if they slipped through
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { isBanned: true },
+        });
+        if (dbUser?.isBanned) {
+          // Returning null signals NextAuth to invalidate the session
+          return null as unknown as typeof session;
+        }
+      }
       return session;
+    },
+  },
+  events: {
+    async createUser({ user }) {
+      // Set lastLoginAt for brand-new users (their first sign-in creates the record)
+      if (user.id) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        });
+      }
     },
   },
 });
