@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.2] — 2026-04-29
+
+_App release_
+
+- feat: add dismissible notifications
+- chore: bump chart and update changelog for v0.7.0 [skip ci]
+- chore: bump chart and update changelog for v0.7.1 [skip ci]
+- 0.7.1
+- feat: show banned-user notice and tighten recipe scraping
+- feat: add admin dashboard and moderation controls
+- docs: document Helm allowedEmails configuration
+- chore: bump chart and update changelog for v0.6.3 [skip ci]
+
 ## [0.7.0] — 2026-04-28
 
 _App release_
