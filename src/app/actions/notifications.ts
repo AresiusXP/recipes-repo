@@ -113,6 +113,46 @@ export async function markNotificationRead(
   }
 }
 
+// ─── Dismiss (permanently delete) a single notification ───
+
+export async function dismissNotification(
+  notificationId: string
+): Promise<{ success: boolean; error?: string }> {
+  const session = await requireAuth();
+  const log = logger.child({
+    action: "dismissNotification",
+    notificationId,
+    userId: session.user.id,
+  });
+
+  try {
+    const notification = await prisma.notification.findUnique({
+      where: { id: notificationId },
+      select: { userId: true },
+    });
+
+    if (!notification || notification.userId !== session.user.id) {
+      log.warn("Dismiss rejected: notification not found or ownership mismatch");
+      return { success: false, error: "Notification not found." };
+    }
+
+    await prisma.notification.delete({
+      where: { id: notificationId },
+    });
+
+    log.info("Notification dismissed");
+
+    revalidatePath("/notifications");
+    revalidatePath("/", "layout");
+
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to dismiss notification";
+    log.error({ err: serializeError(error) }, "Unexpected error dismissing notification");
+    return { success: false, error: message };
+  }
+}
+
 // ─── Mark all notifications as read ───
 
 export async function markAllNotificationsRead(): Promise<{ success: boolean; error?: string }> {

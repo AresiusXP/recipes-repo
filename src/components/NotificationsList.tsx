@@ -1,12 +1,192 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
-import { markNotificationRead, markAllNotificationsRead, type NotificationItem } from "@/app/actions/notifications";
+import { markNotificationRead, markAllNotificationsRead, dismissNotification, type NotificationItem } from "@/app/actions/notifications";
 
 interface NotificationsListProps {
   initialNotifications: NotificationItem[];
 }
+
+// ─── Swipeable notification item ───
+
+interface SwipeableItemProps {
+  notification: NotificationItem;
+  onDismiss: (id: string) => void;
+  onMarkRead: (id: string) => void;
+}
+
+function SwipeableNotificationItem({ notification, onDismiss, onMarkRead }: SwipeableItemProps) {
+  const [translateX, setTranslateX] = useState(0);
+  const [isDismissing, setIsDismissing] = useState(false);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const isScrolling = useRef<boolean | null>(null);
+
+  const SWIPE_THRESHOLD = 80; // px to trigger dismiss
+
+  function handleTouchStart(e: React.TouchEvent) {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isScrolling.current = null;
+    setIsSwiping(false);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = e.touches[0].clientY - touchStartY.current;
+
+    // Determine intent on first significant move
+    if (isScrolling.current === null) {
+      isScrolling.current = Math.abs(dy) > Math.abs(dx);
+      if (!isScrolling.current) setIsSwiping(true);
+    }
+
+    // If scrolling vertically, don't interfere
+    if (isScrolling.current) return;
+
+    // Prevent page scroll while swiping horizontally
+    e.preventDefault();
+    setTranslateX(dx);
+  }
+
+  function handleTouchEnd() {
+    if (isScrolling.current) {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      isScrolling.current = null;
+      setIsSwiping(false);
+      return;
+    }
+
+    if (Math.abs(translateX) >= SWIPE_THRESHOLD) {
+      // Animate off-screen then dismiss
+      setIsDismissing(true);
+      setIsSwiping(false);
+      setTranslateX(translateX > 0 ? 400 : -400);
+      setTimeout(() => onDismiss(notification.id), 250);
+    } else {
+      // Snap back
+      setTranslateX(0);
+      setIsSwiping(false);
+    }
+
+    touchStartX.current = null;
+    touchStartY.current = null;
+    isScrolling.current = null;
+  }
+
+  const senderName = notification.sender?.name ?? "Someone";
+  const timeAgo = formatTimeAgo(notification.createdAt);
+  const swipeOpacity = Math.max(0, 1 - Math.abs(translateX) / 200);
+
+  return (
+    <li
+      className={`relative overflow-hidden rounded-xl border transition-[border-color,background-color] ${
+        notification.isRead
+          ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-800"
+          : "border-primary/30 bg-primary/5 dark:border-primary/20 dark:bg-primary/5"
+      } `}
+      style={{ touchAction: "pan-y" }}
+    >
+      {/* Swipe hint background — icon side follows swipe direction */}
+      <div
+        className={`absolute inset-0 flex items-center px-5 text-sm font-medium text-red-500 ${translateX > 0 ? "justify-start" : "justify-end"}`}
+        aria-hidden="true"
+        style={{ opacity: Math.min(1, Math.abs(translateX) / SWIPE_THRESHOLD) }}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
+      </div>
+
+      {/* Card content — slides with swipe */}
+      <div
+        className={`relative p-4${isSwiping ? " pointer-events-none" : ""}`}
+        style={{
+          transform: `translateX(${translateX}px)`,
+          opacity: swipeOpacity,
+          transition: isDismissing || !isSwiping ? "transform 0.25s ease, opacity 0.25s ease" : "none",
+        }}
+        onTouchStart={isDismissing ? undefined : handleTouchStart}
+        onTouchMove={isDismissing ? undefined : handleTouchMove}
+        onTouchEnd={isDismissing ? undefined : handleTouchEnd}
+      >
+        {/* Dismiss × button */}
+        <button
+          type="button"
+          onClick={() => onDismiss(notification.id)}
+          aria-label="Dismiss notification"
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
+
+        <div className="flex items-start gap-3 pr-6">
+          {/* Sender avatar */}
+          <div className="mt-0.5 shrink-0">
+            {notification.sender?.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={notification.sender.image}
+                alt={senderName}
+                className="h-9 w-9 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
+                {senderName[0]?.toUpperCase() ?? "?"}
+              </span>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <p className={`text-sm ${notification.isRead ? "text-zinc-700 dark:text-zinc-300" : "font-medium text-zinc-900 dark:text-zinc-50"}`}>
+                {notification.message}
+              </p>
+              {!notification.isRead && (
+                <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
+              )}
+            </div>
+            <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{timeAgo}</p>
+
+            {/* Actions */}
+            <div className="mt-2 flex items-center gap-3">
+              {notification.recipeId && (
+                <Link
+                  href={`/recipes/${notification.recipeId}`}
+                  onClick={() => {
+                    if (!notification.isRead) onMarkRead(notification.id);
+                  }}
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  View recipe →
+                </Link>
+              )}
+              {!notification.isRead && (
+                <button
+                  type="button"
+                  onClick={() => onMarkRead(notification.id)}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+                >
+                  Mark as read
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// ─── Main list ───
 
 export function NotificationsList({ initialNotifications }: NotificationsListProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
@@ -16,7 +196,6 @@ export function NotificationsList({ initialNotifications }: NotificationsListPro
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   async function handleMarkRead(notificationId: string) {
-    // Optimistic update
     const prev = notifications;
     setNotifications((curr) =>
       curr.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
@@ -24,7 +203,6 @@ export function NotificationsList({ initialNotifications }: NotificationsListPro
     setErrorMessage(null);
     const result = await markNotificationRead(notificationId);
     if (!result.success) {
-      // Roll back on failure
       setNotifications(prev);
       setErrorMessage(result.error ?? "Failed to mark as read.");
     }
@@ -41,6 +219,17 @@ export function NotificationsList({ initialNotifications }: NotificationsListPro
       setErrorMessage(result.error ?? "Failed to mark all as read.");
     }
     setMarkingAll(false);
+  }
+
+  async function handleDismiss(notificationId: string) {
+    const prev = notifications;
+    setNotifications((curr) => curr.filter((n) => n.id !== notificationId));
+    setErrorMessage(null);
+    const result = await dismissNotification(notificationId);
+    if (!result.success) {
+      setNotifications(prev);
+      setErrorMessage(result.error ?? "Failed to dismiss notification.");
+    }
   }
 
   if (notifications.length === 0) {
@@ -86,76 +275,14 @@ export function NotificationsList({ initialNotifications }: NotificationsListPro
       )}
 
       <ul className="space-y-3">
-        {notifications.map((notification) => {
-          const senderName = notification.sender?.name ?? "Someone";
-          const timeAgo = formatTimeAgo(notification.createdAt);
-
-          return (
-            <li
-              key={notification.id}
-              className={`rounded-xl border p-4 transition-colors ${
-                notification.isRead
-                  ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-800"
-                  : "border-primary/30 bg-primary/5 dark:border-primary/20 dark:bg-primary/5"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                {/* Sender avatar */}
-                <div className="mt-0.5 shrink-0">
-                  {notification.sender?.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={notification.sender.image}
-                      alt={senderName}
-                      className="h-9 w-9 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
-                      {senderName[0]?.toUpperCase() ?? "?"}
-                    </span>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className={`text-sm ${notification.isRead ? "text-zinc-700 dark:text-zinc-300" : "font-medium text-zinc-900 dark:text-zinc-50"}`}>
-                      {notification.message}
-                    </p>
-                    {!notification.isRead && (
-                      <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">{timeAgo}</p>
-
-                  {/* Actions */}
-                  <div className="mt-2 flex items-center gap-3">
-                    {notification.recipeId && (
-                      <Link
-                        href={`/recipes/${notification.recipeId}`}
-                        onClick={() => {
-                          if (!notification.isRead) handleMarkRead(notification.id);
-                        }}
-                        className="text-sm font-medium text-primary hover:underline"
-                      >
-                        View recipe →
-                      </Link>
-                    )}
-                    {!notification.isRead && (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkRead(notification.id)}
-                        className="text-xs text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
-                      >
-                        Mark as read
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </li>
-          );
-        })}
+        {notifications.map((notification) => (
+          <SwipeableNotificationItem
+            key={notification.id}
+            notification={notification}
+            onDismiss={handleDismiss}
+            onMarkRead={handleMarkRead}
+          />
+        ))}
       </ul>
     </div>
   );

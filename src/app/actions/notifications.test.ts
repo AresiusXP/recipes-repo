@@ -15,6 +15,7 @@ const {
       count: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }));
@@ -49,6 +50,7 @@ import {
   getUnreadNotificationCount,
   markNotificationRead,
   markAllNotificationsRead,
+  dismissNotification,
 } from "@/app/actions/notifications";
 
 const DEFAULT_SESSION = {
@@ -211,6 +213,55 @@ describe("markAllNotificationsRead", () => {
     mockPrisma.notification.updateMany.mockResolvedValue({ count: 0 });
 
     await markAllNotificationsRead();
+
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/notifications");
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/", "layout");
+  });
+});
+
+describe("dismissNotification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRequireAuth.mockResolvedValue(DEFAULT_SESSION);
+  });
+
+  it("returns error when notification not found", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue(null);
+
+    const result = await dismissNotification("nonexistent-id");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Notification not found.");
+    expect(mockPrisma.notification.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns error when notification belongs to another user", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({ userId: "other-user" });
+
+    const result = await dismissNotification("notif-1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Notification not found.");
+    expect(mockPrisma.notification.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes own notification", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.notification.delete.mockResolvedValue({});
+
+    const result = await dismissNotification("notif-1");
+
+    expect(result.success).toBe(true);
+    expect(mockPrisma.notification.delete).toHaveBeenCalledWith({
+      where: { id: "notif-1" },
+    });
+  });
+
+  it("revalidates relevant paths after dismissal", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({ userId: "user-1" });
+    mockPrisma.notification.delete.mockResolvedValue({});
+
+    await dismissNotification("notif-1");
 
     expect(mockRevalidatePath).toHaveBeenCalledWith("/notifications");
     expect(mockRevalidatePath).toHaveBeenCalledWith("/", "layout");
