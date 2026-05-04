@@ -18,7 +18,7 @@ npm run test:watch   # Run tests in watch mode
 npm run test:ci      # Run tests with verbose reporter (CI)
 
 npm run db:generate  # Regenerate Prisma client
-npm run db:push      # Push schema to database without migrations
+npm run db:push      # Push schema to database without migrations (uses --accept-data-loss)
 npm run db:migrate   # Create and apply a Prisma migration
 npm run db:studio    # Open Prisma Studio GUI
 ```
@@ -36,8 +36,9 @@ npm run test -- src/lib  # Run tests matching a path pattern
 Test files live alongside the source files they test using the `*.test.ts` naming convention (e.g., `src/lib/scraper.test.ts` tests `src/lib/scraper.ts`).
 
 **What is tested:**
-- Server actions (`src/app/actions/recipes.ts`, `src/app/actions/user.ts`) — input validation, ownership checks, CRUD behavior, error handling
+- Server actions (`src/app/actions/recipes.ts`, `src/app/actions/user.ts`, `src/app/actions/notifications.ts`) — input validation, ownership checks, CRUD behavior, error handling
 - Utility modules (`src/lib/require-auth.ts`, `src/lib/scraper.ts`, `src/lib/image-storage.ts`) — auth guards, HTML parsing, file validation
+- API routes (`src/app/media/[filename]/route.ts`) — media serving
 
 **What is mocked:**
 - Prisma client (`@/lib/prisma`)
@@ -62,7 +63,7 @@ Use `npm run lint`, `npm run test`, and `npm run build` to verify correctness. T
 - **Next.js 16** (App Router) with **React 19** and **TypeScript** (strict mode)
 - **Tailwind CSS 4** for styling
 - **Prisma ORM** with SQLite via `@prisma/adapter-libsql`
-- **NextAuth.js v5** (Google OAuth)
+- **NextAuth.js v5** (Google OAuth and Microsoft Entra ID — both optional, enabled via env vars)
 - **Google Gemini** for AI recipe extraction
 
 ## Project Layout
@@ -70,26 +71,37 @@ Use `npm run lint`, `npm run test`, and `npm run build` to verify correctness. T
 ```
 src/
 ├── app/
-│   ├── actions/recipes.ts   # Server actions (recipe CRUD, translate)
-│   ├── actions/user.ts      # Server actions (user settings)
-│   ├── api/auth/             # NextAuth route handler (minimal)
-│   ├── login/                # Login page
-│   ├── recipes/              # Recipe pages (list, detail, edit, new, favorites)
-│   ├── settings/             # User settings page
-│   ├── globals.css           # Tailwind styles
-│   ├── layout.tsx            # Root layout
-│   └── page.tsx              # Root redirect
-├── components/               # React components (client-side)
-├── generated/prisma/         # Generated Prisma client (gitignored — never edit)
-└── lib/                      # Shared server utilities
-    ├── auth.ts               # NextAuth configuration
-    ├── gemini.ts             # Gemini AI integration
-    ├── image-storage.ts      # Image download/storage
-    ├── prisma.ts             # Prisma client singleton
-    ├── require-auth.ts       # Auth guard helper
-    └── scraper.ts            # Web page scraper
+│   ├── actions/recipes.ts        # Server actions (recipe CRUD, translate, share)
+│   ├── actions/user.ts           # Server actions (user settings, profile image)
+│   ├── actions/notifications.ts  # Server actions (notifications CRUD)
+│   ├── actions/admin.ts          # Server actions (admin user management)
+│   ├── actions/auth.ts           # Server action (sign-out)
+│   ├── api/auth/                 # NextAuth route handler (minimal)
+│   ├── login/                    # Login page
+│   ├── recipes/                  # Recipe pages (list, detail, edit, new, favorites)
+│   ├── notifications/            # Notifications page
+│   ├── settings/                 # User settings page
+│   ├── admin/                    # Admin user management page
+│   ├── media/[filename]/         # Media-serving route for uploaded/downloaded images
+│   ├── globals.css               # Tailwind styles
+│   ├── layout.tsx                # Root layout
+│   └── page.tsx                  # Root redirect
+├── components/                   # React components (mix of server and client components)
+├── generated/prisma/             # Generated Prisma client (gitignored — never edit)
+└── lib/                          # Shared server utilities
+    ├── admin.ts                  # Admin auth guard and email helpers
+    ├── auth.ts                   # NextAuth configuration
+    ├── cook-this-week.ts         # "Cook This Week" date utilities
+    ├── gemini.ts                 # Gemini AI integration
+    ├── image-constants.ts        # Shared image MIME type / size constraints
+    ├── image-storage.ts          # Image download/storage
+    ├── logger.ts                 # Pino logger singleton
+    ├── prisma.ts                 # Prisma client singleton
+    ├── require-auth.ts           # Auth guard helper
+    ├── scraper.ts                # Web page scraper
+    └── theme.ts                  # Theme helpers (client-side)
 prisma/
-└── schema.prisma             # Database schema
+└── schema.prisma                 # Database schema
 ```
 
 ## Code Style
@@ -190,7 +202,7 @@ The translate button on the recipe detail page shows a dropdown with **English**
 - `translateRecipeWithGemini(recipe, targetLanguage)` — standalone translation helper (kept for potential future use; not called during the normal translation flow).
 - `TargetLanguage = "en" | "nl" | "es"` is exported from `src/lib/gemini.ts`.
 
-
+## Prisma
 
 - **Client location:** Generated into `src/generated/prisma` — never hand-edit these files.
 - **Singleton pattern:** Import `prisma` from `@/lib/prisma`. Do not create new `PrismaClient` instances.
@@ -222,7 +234,10 @@ The translate button on the recipe detail page shows a dropdown with **English**
 
 ## Build Configuration Cautions
 
-- `next.config.ts` uses `output: "standalone"` and externalizes Prisma/libsql packages via `serverExternalPackages`. Avoid changes that break standalone server builds.
+- `next.config.ts` uses `output: "standalone"` and externalizes Prisma/libsql packages and `playwright-core` via `serverExternalPackages`. Avoid changes that break standalone server builds.
+- A static **Content-Security-Policy** header is applied to all routes in `next.config.ts`. `unsafe-eval` is only added in development.
+- `experimental.serverActions.bodySizeLimit` is set to `"10mb"` to allow recipe image uploads.
+- `images.localPatterns` allows Next.js to serve images from `/media/**` (the local media directory).
 - ESLint config (`eslint.config.mjs`) uses the flat config format with `eslint-config-next` core-web-vitals and TypeScript presets. No custom stylistic rules are added.
 
 ## Environment Variables
@@ -234,9 +249,14 @@ Required variables are documented in `.env.example`:
 | `AUTH_SECRET` | Session encryption secret |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `MICROSOFT_ENTRA_ID_CLIENT_ID` | Microsoft Entra ID client ID (leave empty to disable) |
+| `MICROSOFT_ENTRA_ID_CLIENT_SECRET` | Microsoft Entra ID client secret |
+| `MICROSOFT_ENTRA_ID_ISSUER` | Microsoft issuer URL (default: `common` — personal + work accounts) |
 | `GEMINI_API_KEY` | Google Gemini API key |
-| `DATABASE_URL` | SQLite database path (default: `file:./dev.db`) |
+| `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
+| `DATABASE_URL` | SQLite database path (default in code: `file:./prisma/dev.db`; `.env.example` uses `file:./dev.db`) |
 | `NEXTAUTH_URL` | App base URL for OAuth callbacks |
 | `AUTH_URL` | Auth.js v5 app URL (same as `NEXTAUTH_URL`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
 | `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations (empty = open) |
+| `ADMIN_EMAILS` | Comma-separated list of admin emails (default: `aresiusxp@gmail.com`) |
