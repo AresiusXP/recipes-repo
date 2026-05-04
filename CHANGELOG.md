@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.7] — 2026-05-04
+
+_App release_
+
+- fix: create home directory for nextjs user so Chromium can launch
+
 ## [0.7.6] — 2026-05-04
 
 _App release_
