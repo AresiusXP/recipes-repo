@@ -37,6 +37,12 @@ COPY prisma ./prisma/
 ENV PRISMA_SKIP_POSTINSTALL_GENERATE=true
 RUN npm ci --omit=dev
 
+# Install openssl — required by Prisma to detect the libssl version at runtime.
+# node:20-bookworm-slim does not include it by default.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create data directory with correct permissions
 RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data /app/prisma
 
@@ -65,6 +71,7 @@ RUN groupadd --system --gid 1001 nodejs && \
 # Playwright path for Debian/Ubuntu images.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    openssl \
     curl \
     chromium \
     fonts-liberation \
