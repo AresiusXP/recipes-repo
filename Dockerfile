@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create data directory with correct permissions
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data /app/prisma
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data /app/prisma /app/node_modules
 
 ENV DATABASE_URL="file:/app/data/recipes.db"
 
