@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.4] — 2026-05-04
+
+_App release_
+
+- fix: add ca-certificates to Debian runner image
+
 ## [0.7.3] — 2026-05-04
 
 _App release_
