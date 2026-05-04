@@ -29,7 +29,7 @@ ENV NODE_ENV=production
 
 # Create non-root user (same UID/GID as the runner for shared volume permissions)
 RUN groupadd --system --gid 1001 nodejs && \
-    useradd --system --uid 1001 --gid nodejs nextjs
+    useradd --system --uid 1001 --gid nodejs --create-home nextjs
 
 # Install only production dependencies (includes Prisma CLI + full dep tree)
 COPY package.json package-lock.json ./
@@ -59,10 +59,13 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Ensure Chromium can find a writable home directory for its crash database
+# and user profile. useradd --system does not create the home dir by default.
+ENV HOME=/home/nextjs
 
 # Create non-root user
 RUN groupadd --system --gid 1001 nodejs && \
-    useradd --system --uid 1001 --gid nodejs nextjs
+    useradd --system --uid 1001 --gid nodejs --create-home nextjs
 
 # Install curl (needed by the scraper's primary fetch strategy) and
 # Chromium with its runtime dependencies (needed by the Playwright browser
