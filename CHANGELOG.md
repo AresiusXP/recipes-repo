@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.6] — 2026-05-04
+
+_App release_
+
+- fix: grant nextjs user write access to node_modules in migrator
+- chore: bump chart and update changelog for v0.7.5 [skip ci]
+- fix: resolve Kubernetes runtime issues and bump version to 0.7.5
+- chore: bump chart and update changelog for v0.7.4 [skip ci]
+
 ## [0.7.5] — 2026-05-04
 
 _App release_
