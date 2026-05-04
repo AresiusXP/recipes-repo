@@ -411,6 +411,18 @@ async function fetchWithBrowser(
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-blink-features=AutomationControlled",
+      // Required for containerised / Kubernetes environments:
+      // --no-zygote disables the zygote process model which requires kernel
+      //   namespace features often blocked by default seccomp profiles.
+      // --disable-gpu prevents GPU initialisation crashes in headless pods.
+      // --disable-crash-reporter stops chrome_crashpad_handler from being
+      //   invoked (eliminates the "--database is required" crash on startup).
+      // --single-process runs the renderer in the browser process so no
+      //   subprocess privilege escalation is needed in locked-down pods.
+      "--no-zygote",
+      "--disable-gpu",
+      "--disable-crash-reporter",
+      "--single-process",
     ],
   };
 
