@@ -64,6 +64,7 @@ RUN groupadd --system --gid 1001 nodejs && \
 # Chromium is installed from Debian's official repos — this is the supported
 # Playwright path for Debian/Ubuntu images.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     chromium \
     fonts-liberation \
