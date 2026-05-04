@@ -99,6 +99,10 @@ spec:
               value: {{ .Values.config.logLevel | default "info" | quote }}
             - name: APP_NAME
               value: {{ .Values.config.appName | default "recipes-repo" | quote }}
+            {{- if .Values.config.playwrightExecutablePath }}
+            - name: PLAYWRIGHT_EXECUTABLE_PATH
+              value: {{ .Values.config.playwrightExecutablePath | quote }}
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /app/data

@@ -79,6 +79,13 @@ vi.mock("@/lib/scraper", () => ({
       this.statusText = statusText;
     }
   },
+  LoginWallError: class LoginWallError extends Error {
+    constructor(finalUrl?: string) {
+      const detail = finalUrl ? ` (redirected to ${finalUrl})` : "";
+      super(`This page requires a login or subscription to view${detail}`);
+      this.name = "LoginWallError";
+    }
+  },
 }));
 
 vi.mock("@/lib/gemini", () => ({
@@ -170,6 +177,19 @@ describe("importRecipeFromUrl", () => {
     expect(result.siteBlocked).toBe(true);
     expect(result.blockedUrl).toBe("https://example.com/blocked");
     expect(result.error).toContain("403");
+    expect(result.error).toContain("Paste Recipe Text");
+  });
+
+  it("returns siteBlocked result when scraping encounters LoginWallError", async () => {
+    const { LoginWallError } = await import("@/lib/scraper");
+    mockScrapePage.mockRejectedValue(new LoginWallError("https://sso.example.com/login"));
+
+    const result = await importRecipeFromUrl("https://example.com/recipe");
+
+    expect(result.success).toBe(false);
+    expect(result.siteBlocked).toBe(true);
+    expect(result.blockedUrl).toBe("https://example.com/recipe");
+    expect(result.error).toContain("login or subscription");
     expect(result.error).toContain("Paste Recipe Text");
   });
 

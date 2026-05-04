@@ -25,6 +25,62 @@ const LANGUAGE_LABELS: Record<TargetLanguage, string> = {
 
 const ALL_LANGUAGES: TargetLanguage[] = ["en", "nl", "es"];
 
+// ─── Translation progress messages ───
+
+interface TranslationStage {
+  message: string;
+  minMs: number;
+}
+
+const URL_TRANSLATION_STAGES: TranslationStage[] = [
+  { message: "Re-fetching recipe page…", minMs: 2500 },
+  { message: "Translating with AI…", minMs: 4000 },
+  { message: "Saving translation…", minMs: 0 },
+];
+
+const MANUAL_TRANSLATION_STAGES: TranslationStage[] = [
+  { message: "Translating with AI…", minMs: 4000 },
+  { message: "Saving translation…", minMs: 0 },
+];
+
+const REVERT_STAGES: TranslationStage[] = [
+  { message: "Reverting to original…", minMs: 0 },
+];
+
+function useTranslationProgress(active: boolean, stages: TranslationStage[]): string {
+  const [stageIndex, setStageIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setStageIndex(0);
+      return;
+    }
+
+    let idx = 0;
+    setStageIndex(0);
+
+    function advance() {
+      idx = Math.min(idx + 1, stages.length - 1);
+      setStageIndex(idx);
+      if (idx < stages.length - 1 && stages[idx].minMs > 0) {
+        timer = setTimeout(advance, stages[idx].minMs);
+      }
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (stages[0].minMs > 0) {
+      timer = setTimeout(advance, stages[0].minMs);
+    }
+
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  return stages[Math.min(stageIndex, stages.length - 1)].message;
+}
+
 export function TranslateRecipeButton({
   recipeId,
   isManualImport,
@@ -35,8 +91,19 @@ export function TranslateRecipeButton({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [translating, setTranslating] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<TargetLanguage | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Pick the right stage sequence based on what was selected
+  const translationStages =
+    selectedTarget === null
+      ? REVERT_STAGES
+      : isManualImport
+      ? MANUAL_TRANSLATION_STAGES
+      : URL_TRANSLATION_STAGES;
+
+  const progressMessage = useTranslationProgress(translating, translationStages);
 
   // Close on outside click or Escape
   useEffect(() => {
@@ -59,6 +126,7 @@ export function TranslateRecipeButton({
 
   async function handleSelect(target: TargetLanguage | null) {
     setOpen(false);
+    setSelectedTarget(target);
     setTranslating(true);
     setError(null);
     try {
@@ -72,6 +140,7 @@ export function TranslateRecipeButton({
       setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
       setTranslating(false);
+      setSelectedTarget(undefined);
     }
   }
 
@@ -135,7 +204,7 @@ export function TranslateRecipeButton({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            Translating…
+            {progressMessage}
           </>
         ) : (
           <>

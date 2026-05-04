@@ -37,6 +37,12 @@ config:
   databaseUrl: "file:/app/data/recipes.db"
   # Gemini model to use for recipe extraction
   geminiModel: "gemini-2.0-flash"
+  # Path to the Chromium binary used by the Playwright browser fallback.
+  # The production image (Debian bookworm) installs Chromium via apt and sets
+  # this automatically. Override only if you use a custom image or a non-standard
+  # Chromium location (e.g. "/usr/bin/chromium-browser" on some distros).
+  # Leave empty to use the image default (/usr/bin/chromium).
+  playwrightExecutablePath: ""
   # Structured log level emitted to stdout (trace | debug | info | warn | error | fatal)
   # Loki scrapes container stdout; use "info" in production, "debug" for troubleshooting.
   logLevel: "info"
@@ -116,10 +122,13 @@ persistence:
 resources:
   limits:
     cpu: 500m
-    memory: 512Mi
+    # Chromium (used by the browser fallback scraper) requires more memory than
+    # a typical Node.js app. 768Mi is the recommended minimum; raise to 1Gi if
+    # you frequently scrape login-walled sites.
+    memory: 768Mi
   requests:
     cpu: 100m
-    memory: 128Mi
+    memory: 256Mi
 
 nodeSelector: {}
 

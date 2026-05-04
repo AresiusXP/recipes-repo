@@ -22,6 +22,32 @@ vi.mock("node:util", () => ({
       fn(...args),
 }));
 
+// ─── Mock playwright-core (browser fallback) ───
+const mockBrowserPage = {
+  addInitScript: vi.fn().mockResolvedValue(undefined),
+  goto: vi.fn().mockResolvedValue(undefined),
+  waitForTimeout: vi.fn().mockResolvedValue(undefined),
+  content: vi.fn().mockResolvedValue("<html><body><p>Browser content</p></body></html>"),
+  url: vi.fn().mockReturnValue("https://example.com/recipe"),
+};
+
+const mockBrowserContext = {
+  newPage: vi.fn().mockResolvedValue(mockBrowserPage),
+};
+
+const mockBrowser = {
+  newContext: vi.fn().mockResolvedValue(mockBrowserContext),
+  close: vi.fn().mockResolvedValue(undefined),
+};
+
+const mockChromium = {
+  launch: vi.fn().mockResolvedValue(mockBrowser),
+};
+
+vi.mock("playwright-core", () => ({
+  chromium: mockChromium,
+}));
+
 // Silence the logger during tests
 vi.mock("@/lib/logger", () => ({
   logger: {
@@ -41,7 +67,7 @@ vi.mock("@/lib/logger", () => ({
   serializeError: (e: unknown) => ({ message: e instanceof Error ? e.message : String(e) }),
 }));
 
-import { scrapePage, SiteBlockedError } from "@/lib/scraper";
+import { scrapePage, SiteBlockedError, LoginWallError } from "@/lib/scraper";
 
 // ─── Helpers ───
 
@@ -51,10 +77,10 @@ function makeHtml(body: string, head = ""): string {
 
 /**
  * Returns a mock resolved value for execFile simulating curl success.
- * curl stdout format: {body}\n{http_status_code}
+ * curl stdout format: {body}\n{http_status_code}\n{effective_url}
  */
-function curlOk(html: string, status = 200): Promise<{ stdout: string }> {
-  return Promise.resolve({ stdout: `${html}\n${status}` });
+function curlOk(html: string, status = 200, effectiveUrl = "https://example.com/recipe"): Promise<{ stdout: string }> {
+  return Promise.resolve({ stdout: `${html}\n${status}\n${effectiveUrl}` });
 }
 
 /**
@@ -62,7 +88,7 @@ function curlOk(html: string, status = 200): Promise<{ stdout: string }> {
  * curl exits 0 even on HTTP errors; it only exits non-zero on network failures.
  */
 function curlHttpError(status: number): Promise<{ stdout: string }> {
-  return Promise.resolve({ stdout: `\n${status}` });
+  return Promise.resolve({ stdout: `\n${status}\nhttps://example.com/recipe` });
 }
 
 /**
@@ -71,6 +97,13 @@ function curlHttpError(status: number): Promise<{ stdout: string }> {
  */
 function curlNetworkError(message: string): Promise<never> {
   return Promise.reject(new Error(message));
+}
+
+/**
+ * Simulates curl being redirected to a login/SSO page (200 OK but login content).
+ */
+function curlLoginWall(loginHtml: string, ssoUrl = "https://sso.example.com/login"): Promise<{ stdout: string }> {
+  return Promise.resolve({ stdout: `${loginHtml}\n200\n${ssoUrl}` });
 }
 
 describe("SiteBlockedError", () => {
@@ -85,9 +118,31 @@ describe("SiteBlockedError", () => {
   });
 });
 
+describe("LoginWallError", () => {
+  it("has the correct name and message", () => {
+    const err = new LoginWallError("https://sso.example.com/login");
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(LoginWallError);
+    expect(err.name).toBe("LoginWallError");
+    expect(err.message).toContain("login or subscription");
+    expect(err.message).toContain("sso.example.com");
+  });
+
+  it("works without a finalUrl argument", () => {
+    const err = new LoginWallError();
+    expect(err.message).toContain("login or subscription");
+  });
+});
+
 describe("scrapePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset browser mock to default (success) state
+    mockBrowserPage.content.mockResolvedValue("<html><body><p>Browser content</p></body></html>");
+    mockBrowserPage.url.mockReturnValue("https://example.com/recipe");
+    mockBrowserPage.goto.mockResolvedValue(undefined);
+    mockBrowser.close.mockResolvedValue(undefined);
+    mockChromium.launch.mockResolvedValue(mockBrowser);
   });
 
   it("extracts title from og:title meta tag", async () => {
@@ -447,5 +502,150 @@ describe("scrapePage", () => {
     expect(result.content).not.toContain("Great!");
     expect(result.content).not.toContain("Loved it");
     expect(result.content).not.toContain("aggregateRating");
+  });
+
+  // ─── Login-wall detection and browser fallback ───
+
+  it("triggers browser fallback when curl is redirected to an SSO/auth domain", async () => {
+    const loginHtml = makeHtml(
+      '<form><input type="password" name="password"/><a href="/forgot">Wachtwoord vergeten?</a><a href="/register">Registreer nu</a></form>',
+      "<title>Inloggen</title>"
+    );
+    const recipeHtml = makeHtml(
+      "<article><p>Delicious recipe content that is long enough to be valid.</p></article>",
+      '<meta property="og:title" content="Spaans gevulde zoete aardappels" />'
+    );
+
+    // curl returns login page (redirected to sso domain)
+    mockExecFile.mockReturnValue(curlLoginWall(loginHtml, "https://sso.roularta.nl/login"));
+
+    // browser returns the real recipe page
+    mockBrowserPage.content.mockResolvedValue(recipeHtml);
+    mockBrowserPage.url.mockReturnValue("https://deliciousmagazine.nl/recepten/spaans-gevulde-zoete-aardappels/");
+
+    const result = await scrapePage("https://deliciousmagazine.nl/recepten/spaans-gevulde-zoete-aardappels/");
+
+    expect(result.usedBrowserFallback).toBe(true);
+    expect(result.title).toBe("Spaans gevulde zoete aardappels");
+    expect(mockChromium.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers browser fallback when curl returns a login-wall page on the same domain", async () => {
+    // Some sites don't redirect to a separate SSO domain — they show a login form inline
+    const loginHtml = makeHtml(
+      '<form><input type="password" name="password"/><a href="/forgot">Forgot password?</a><a href="/register">Register now</a></form>',
+      "<title>Login</title>"
+    );
+    const recipeHtml = makeHtml("<article><p>Real recipe content here that is long enough.</p></article>");
+
+    // curl returns login page on the same domain (no redirect)
+    mockExecFile.mockReturnValue(curlOk(loginHtml, 200, "https://example.com/recipe"));
+
+    // browser returns the real recipe page
+    mockBrowserPage.content.mockResolvedValue(recipeHtml);
+    mockBrowserPage.url.mockReturnValue("https://example.com/recipe");
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.usedBrowserFallback).toBe(true);
+    expect(mockChromium.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws LoginWallError when both curl and browser land on a login wall", async () => {
+    const loginHtml = makeHtml(
+      '<form><input type="password" name="password"/><a href="/forgot">Wachtwoord vergeten?</a><a href="/register">Registreer nu</a></form>',
+      "<title>Inloggen</title>"
+    );
+
+    // curl returns login page
+    mockExecFile.mockReturnValue(curlLoginWall(loginHtml, "https://sso.example.com/login"));
+
+    // browser also returns login page
+    mockBrowserPage.content.mockResolvedValue(loginHtml);
+    mockBrowserPage.url.mockReturnValue("https://sso.example.com/login");
+
+    const err = await scrapePage("https://example.com/recipe").catch((e) => e);
+
+    expect(err).toBeInstanceOf(LoginWallError);
+    expect(err.message).toContain("login or subscription");
+    expect(mockChromium.launch).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws LoginWallError when browser fallback itself fails to launch", async () => {
+    const loginHtml = makeHtml(
+      '<form><input type="password" name="password"/><a href="/forgot">Wachtwoord vergeten?</a><a href="/register">Registreer nu</a></form>',
+      "<title>Inloggen</title>"
+    );
+
+    // curl returns login page
+    mockExecFile.mockReturnValue(curlLoginWall(loginHtml, "https://sso.example.com/login"));
+
+    // browser fails to launch
+    mockChromium.launch.mockRejectedValue(new Error("Chromium not found"));
+
+    const err = await scrapePage("https://example.com/recipe").catch((e) => e);
+
+    expect(err).toBeInstanceOf(LoginWallError);
+  });
+
+  it("does NOT trigger browser fallback for a normal recipe page (no login signals)", async () => {
+    const recipeHtml = makeHtml(
+      "<article><p>A delicious recipe with lots of content here.</p></article>",
+      '<meta property="og:title" content="Pasta Carbonara" />'
+    );
+
+    mockExecFile.mockReturnValue(curlOk(recipeHtml));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.usedBrowserFallback).toBeFalsy();
+    expect(mockChromium.launch).not.toHaveBeenCalled();
+    expect(result.title).toBe("Pasta Carbonara");
+  });
+
+  it("does NOT trigger browser fallback for a page with a login link in the header (not a login wall)", async () => {
+    // A normal recipe page that happens to have a "Log in" link in the nav
+    const normalPageHtml = makeHtml(
+      `<nav><a href="/login">Log in</a></nav>
+       <article>
+         <h1>Chocolate Cake</h1>
+         <p>${"This is a very long recipe description. ".repeat(20)}</p>
+       </article>`,
+      '<meta property="og:title" content="Chocolate Cake" />'
+    );
+
+    mockExecFile.mockReturnValue(curlOk(normalPageHtml));
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    // Should NOT trigger browser fallback — only one weak signal (login link in nav)
+    expect(result.usedBrowserFallback).toBeFalsy();
+    expect(mockChromium.launch).not.toHaveBeenCalled();
+  });
+
+  it("does NOT trigger browser fallback on SiteBlockedError (403)", async () => {
+    mockExecFile.mockReturnValue(curlHttpError(403));
+
+    const err = await scrapePage("https://example.com/blocked").catch((e) => e);
+
+    expect(err).toBeInstanceOf(SiteBlockedError);
+    // Browser fallback should NOT be attempted for hard 403s
+    expect(mockChromium.launch).not.toHaveBeenCalled();
+  });
+
+  it("browser fallback sets usedBrowserFallback flag on the result", async () => {
+    const loginHtml = makeHtml(
+      '<form><input type="password" name="password"/><a href="/forgot">Wachtwoord vergeten?</a><a href="/register">Registreer nu</a></form>',
+      "<title>Inloggen</title>"
+    );
+    const recipeHtml = makeHtml("<article><p>Real recipe content here that is long enough.</p></article>");
+
+    mockExecFile.mockReturnValue(curlLoginWall(loginHtml, "https://sso.example.com/login"));
+    mockBrowserPage.content.mockResolvedValue(recipeHtml);
+    mockBrowserPage.url.mockReturnValue("https://example.com/recipe");
+
+    const result = await scrapePage("https://example.com/recipe");
+
+    expect(result.usedBrowserFallback).toBe(true);
   });
 });

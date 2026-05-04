@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
-import { scrapePage, SiteBlockedError } from "@/lib/scraper";
+import { scrapePage, SiteBlockedError, LoginWallError } from "@/lib/scraper";
 import { extractRecipeWithGemini, type TargetLanguage } from "@/lib/gemini";
 import { downloadImage, deleteImage, duplicateImage, saveUploadedImage, isLocalMediaPath } from "@/lib/image-storage";
 import { logger, serializeError } from "@/lib/logger";
@@ -81,6 +81,14 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
           siteBlocked: true,
           blockedUrl: url,
           error: `This website doesn't allow automated import (${scrapeError.status}). Open the page in your browser, copy all the recipe text, then use "Paste Recipe Text" to import it.`,
+        };
+      }
+      if (scrapeError instanceof LoginWallError) {
+        return {
+          success: false,
+          siteBlocked: true,
+          blockedUrl: url,
+          error: `This page requires a login or subscription. Open the page in your browser while logged in, copy all the recipe text, then use "Paste Recipe Text" to import it.`,
         };
       }
       const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
@@ -349,6 +357,12 @@ export async function translateRecipe(
       } catch (scrapeError) {
         const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
         log.warn({ sourceUrl: recipe.sourceUrl, err: serializeError(scrapeError) }, "Re-scrape failed for translation");
+        if (scrapeError instanceof LoginWallError) {
+          return {
+            success: false,
+            error: `The original recipe page now requires a login or subscription. Translation is not available.`,
+          };
+        }
         return {
           success: false,
           error: `Could not reach the original recipe page: ${msg}. The translation source must be the original link.`,

@@ -10,6 +10,8 @@ export interface ScrapedPage {
   title: string;
   content: string;
   imageUrl: string | null;
+  /** True when the browser fallback (Playwright) was used instead of curl. */
+  usedBrowserFallback?: boolean;
 }
 
 /**
@@ -25,6 +27,18 @@ export class SiteBlockedError extends Error {
     this.name = "SiteBlockedError";
     this.status = status;
     this.statusText = statusText;
+  }
+}
+
+/**
+ * A structured error for when a site requires login / subscription to view content.
+ * Raised when curl lands on an auth/login wall even though the HTTP status was 200.
+ */
+export class LoginWallError extends Error {
+  constructor(finalUrl?: string) {
+    const detail = finalUrl ? ` (redirected to ${finalUrl})` : "";
+    super(`This page requires a login or subscription to view${detail}`);
+    this.name = "LoginWallError";
   }
 }
 
@@ -108,7 +122,7 @@ function buildCurlArgs(url: string, headers: HeaderMap): string[] {
     "--compressed",       // auto-decompress gzip/br (we advertise it in Accept-Encoding)
     "--max-time", "15",   // 15 s total timeout
     "--max-redirs", "10", // follow up to 10 redirects
-    "--write-out", "\n%{http_code}", // append status code as last line of stdout
+    "--write-out", "\n%{http_code}\n%{url_effective}", // append status + final URL
   ];
 
   for (const [name, value] of Object.entries(headers)) {
@@ -119,11 +133,15 @@ function buildCurlArgs(url: string, headers: HeaderMap): string[] {
   return args;
 }
 
+interface FetchResultWithUrl extends FetchResult {
+  effectiveUrl: string;
+}
+
 /**
- * Runs curl for the given URL + headers and returns { status, body }.
+ * Runs curl for the given URL + headers and returns { status, body, effectiveUrl }.
  * Throws on network-level failures (curl exit code != 0 for non-HTTP reasons).
  */
-async function runCurl(url: string, headers: HeaderMap): Promise<FetchResult> {
+async function runCurl(url: string, headers: HeaderMap): Promise<FetchResultWithUrl> {
   const args = buildCurlArgs(url, headers);
 
   // execFile does not spawn a shell, so the URL and headers are safe from injection.
@@ -132,29 +150,31 @@ async function runCurl(url: string, headers: HeaderMap): Promise<FetchResult> {
     encoding: "utf8",
   });
 
-  // The last line of stdout is the HTTP status code written by --write-out.
-  const lastNewline = stdout.lastIndexOf("\n");
-  const statusLine = stdout.slice(lastNewline + 1).trim();
-  const body = stdout.slice(0, lastNewline);
+  // --write-out appends "\n{http_code}\n{url_effective}" after the body.
+  // We parse from the end to avoid false matches inside the HTML body.
+  const lines = stdout.split("\n");
+  const effectiveUrl = lines[lines.length - 1].trim();
+  const statusLine = lines[lines.length - 2].trim();
+  const body = lines.slice(0, lines.length - 2).join("\n");
   const status = parseInt(statusLine, 10);
 
   if (isNaN(status)) {
     throw new Error(`curl returned unexpected output (could not parse status code)`);
   }
 
-  return { status, body };
+  return { status, body, effectiveUrl };
 }
 
 /**
  * Fetches a URL with a sequence of header strategies, using curl.
- * Returns the body on the first successful (2xx) response.
+ * Returns { body, effectiveUrl } on the first successful (2xx) response.
  * Retries on 403/401; throws SiteBlockedError if all strategies are exhausted.
  * Throws a plain Error for other non-2xx statuses.
  */
 async function fetchWithStrategies(
   url: string,
   log: pino.Logger
-): Promise<string> {
+): Promise<{ body: string; effectiveUrl: string }> {
   const parsed = new URL(url);
   const homepageReferer = `${parsed.origin}/`;
 
@@ -173,7 +193,7 @@ async function fetchWithStrategies(
   for (const attempt of attempts) {
     log.debug({ strategy: attempt.label }, "Attempting fetch");
 
-    let result: FetchResult;
+    let result: FetchResultWithUrl;
     try {
       result = await runCurl(url, attempt.headers);
     } catch (err) {
@@ -183,8 +203,8 @@ async function fetchWithStrategies(
     }
 
     if (result.status >= 200 && result.status < 300) {
-      log.debug({ strategy: attempt.label, status: result.status }, "Fetch succeeded");
-      return result.body;
+      log.debug({ strategy: attempt.label, status: result.status, effectiveUrl: result.effectiveUrl }, "Fetch succeeded");
+      return { body: result.body, effectiveUrl: result.effectiveUrl };
     }
 
     lastStatus = result.status;
@@ -218,20 +238,238 @@ function httpStatusText(status: number): string {
   return texts[status] ?? "Unknown";
 }
 
-// ─── Main scraper ───
+// ─── Login-wall detection ───
 
 /**
- * Fetches a web page and extracts the main text content and best image.
- *
- * Uses curl as the HTTP client to avoid Node.js/undici TLS fingerprint
- * detection by CDN bot-protection systems (e.g. Akamai).
+ * Known auth/SSO domains that recipe sites redirect to when content is paywalled.
+ * Checked against the effective URL after curl follows all redirects.
  */
-export async function scrapePage(url: string): Promise<ScrapedPage> {
-  const log = logger.child({ component: "scraper", url });
+const AUTH_DOMAINS = [
+  "sso.",
+  "login.",
+  "auth.",
+  "account.",
+  "signin.",
+  "accounts.",
+  "id.",
+  "identity.",
+  "passport.",
+  "mijnmagazines.",
+  "roularta.",
+];
 
-  log.debug("Fetching page");
+/**
+ * Keywords that strongly indicate a login/paywall page in the page title or body.
+ * Checked case-insensitively.
+ */
+const LOGIN_TITLE_KEYWORDS = [
+  "inloggen",
+  "aanmelden",
+  "log in",
+  "login",
+  "sign in",
+  "signin",
+  "registreer",
+  "register",
+  "subscribe",
+  "abonneer",
+  "paywall",
+];
 
-  const html = await fetchWithStrategies(url, log);
+/**
+ * Returns true when the effective URL (after redirects) looks like an auth/SSO domain.
+ */
+function isAuthDomain(effectiveUrl: string): boolean {
+  try {
+    const hostname = new URL(effectiveUrl).hostname.toLowerCase();
+    return AUTH_DOMAINS.some((d) => hostname.startsWith(d) || hostname.includes("." + d.replace(/\.$/, "")));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns true when the page title strongly suggests a login/paywall page.
+ */
+function isLoginTitle(title: string): boolean {
+  const lower = title.toLowerCase().trim();
+  return LOGIN_TITLE_KEYWORDS.some((kw) => lower === kw || lower.startsWith(kw + " ") || lower.endsWith(" " + kw));
+}
+
+/**
+ * Returns true when the HTML body contains multiple strong login-wall signals.
+ * We require at least 2 signals to avoid false positives on pages that merely
+ * mention login (e.g. a header with a "Log in" link on an otherwise public page).
+ */
+function hasLoginWallSignals(html: string): boolean {
+  const lower = html.toLowerCase();
+  const signals = [
+    /<input[^>]+type=["']?password["']?/i.test(html),
+    lower.includes("wachtwoord vergeten") || lower.includes("forgot password") || lower.includes("reset password"),
+    lower.includes("registreer nu") || lower.includes("register now") || lower.includes("create account"),
+    (lower.includes("inloggen via") || lower.includes("sign in with") || lower.includes("log in with")) &&
+      (lower.includes("facebook") || lower.includes("google") || lower.includes("apple")),
+    lower.includes("abonnement") || lower.includes("subscription required") || lower.includes("subscribers only"),
+  ];
+  return signals.filter(Boolean).length >= 2;
+}
+
+/**
+ * Detects whether a fetched page is actually a login/auth wall.
+ * Returns the reason string if it is, or null if the page looks normal.
+ */
+function detectLoginWall(
+  html: string,
+  effectiveUrl: string,
+  originalUrl: string
+): string | null {
+  // Check 1: did curl land on a completely different auth domain?
+  if (effectiveUrl && effectiveUrl !== originalUrl && isAuthDomain(effectiveUrl)) {
+    return `redirected to auth domain (${effectiveUrl})`;
+  }
+
+  // Check 2: page title is a login page title
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim() : "";
+  if (title && isLoginTitle(title)) {
+    // Only flag if the page is also very short (real recipe pages are much longer)
+    // or has login-wall body signals — avoids false positives on pages with "Login" in the title
+    if (html.length < 5000 || hasLoginWallSignals(html)) {
+      return `page title is "${title}" and content matches login wall`;
+    }
+  }
+
+  // Check 3: body has multiple strong login-wall signals
+  if (hasLoginWallSignals(html)) {
+    return "page body contains multiple login-wall signals";
+  }
+
+  return null;
+}
+
+// ─── Browser-based fallback (Playwright) ───
+
+/**
+ * Fetches a page using a real Chromium browser via Playwright.
+ * Used as a fallback when curl is detected to have landed on a login/auth wall.
+ *
+ * The browser renders JavaScript, follows client-side redirects, and presents
+ * a genuine browser TLS fingerprint + full browser environment — making it
+ * much harder for sites to distinguish from a real user.
+ */
+/**
+ * Resolves the Chromium executable path for Playwright in priority order:
+ *
+ * 1. `PLAYWRIGHT_EXECUTABLE_PATH` env var — explicit override for any environment
+ * 2. `/usr/bin/chromium` — Debian/Ubuntu system Chromium (production container)
+ * 3. `/usr/bin/chromium-browser` — alternative Debian/Ubuntu path
+ * 4. `undefined` — let Playwright use `channel: "chrome"` (macOS dev with system Chrome)
+ *
+ * The production Docker image (Debian bookworm) installs Chromium via apt, so
+ * path 2 will be used there. On a macOS dev machine without a managed Playwright
+ * binary, path 4 falls back to the system Google Chrome via the "chrome" channel.
+ */
+async function resolveChromiumExecutable(log: pino.Logger): Promise<string | undefined> {
+  // 1. Explicit env override — highest priority, works everywhere
+  if (process.env.PLAYWRIGHT_EXECUTABLE_PATH) {
+    log.debug({ path: process.env.PLAYWRIGHT_EXECUTABLE_PATH }, "Using PLAYWRIGHT_EXECUTABLE_PATH from env");
+    return process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+  }
+
+  // 2 & 3. System Chromium installed in the container image
+  const { access } = await import("node:fs/promises");
+  for (const candidate of ["/usr/bin/chromium", "/usr/bin/chromium-browser"]) {
+    try {
+      await access(candidate);
+      log.debug({ path: candidate }, "Using system Chromium");
+      return candidate;
+    } catch {
+      // not found, try next
+    }
+  }
+
+  // 4. No explicit path — Playwright will use channel: "chrome" (system Chrome on macOS)
+  log.debug("No system Chromium found; will use channel: chrome (macOS dev fallback)");
+  return undefined;
+}
+
+async function fetchWithBrowser(
+  url: string,
+  log: pino.Logger
+): Promise<{ html: string; effectiveUrl: string }> {
+  // Dynamic import so playwright-core is only loaded when actually needed.
+  // This keeps the module lightweight for the common (curl-success) path.
+  const { chromium } = await import("playwright-core");
+
+  const executablePath = await resolveChromiumExecutable(log);
+
+  log.debug({ executablePath: executablePath ?? "(channel: chrome)" }, "Launching browser for fallback fetch");
+
+  const launchOptions: Parameters<typeof chromium.launch>[0] = {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+    ],
+  };
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+  } else {
+    // macOS dev: use system Google Chrome via the "chrome" channel
+    launchOptions.channel = "chrome";
+  }
+
+  const browser = await chromium.launch(launchOptions);
+
+  try {
+    const context = await browser.newContext({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+      locale: "nl-NL",
+      timezoneId: "Europe/Amsterdam",
+      viewport: { width: 1280, height: 800 },
+      extraHTTPHeaders: {
+        "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+    });
+
+    const page = await context.newPage();
+
+    // Remove the webdriver property that headless browsers expose
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
+
+    log.debug({ url }, "Browser navigating to URL");
+
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    // Wait a moment for any JS-driven redirects or content injection to settle
+    await page.waitForTimeout(2000);
+
+    const html = await page.content();
+    const effectiveUrl = page.url();
+
+    log.debug({ effectiveUrl, htmlLength: html.length }, "Browser fetch completed");
+
+    return { html, effectiveUrl };
+  } finally {
+    await browser.close();
+  }
+}
+
+// ─── HTML extraction helpers ───
+
+/**
+ * Extracts structured recipe content and metadata from an HTML string.
+ * Shared between the curl and browser scraping paths.
+ */
+function extractFromHtml(html: string): { title: string; content: string; imageUrl: string | null } {
   const $ = cheerio.load(html);
 
   // Extract JSON-LD structured data before removing scripts
@@ -296,21 +534,91 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
   // Clean up whitespace
   content = content.replace(/\s+/g, " ").trim();
 
+  return { title: title.trim(), content, imageUrl };
+}
+
+// ─── Main scraper ───
+
+/**
+ * Fetches a web page and extracts the main text content and best image.
+ *
+ * Strategy:
+ * 1. Try curl with browser-like headers (fast, avoids TLS fingerprint issues).
+ * 2. If curl lands on a login/auth wall (detected by redirect domain or page signals),
+ *    automatically retry with a real Chromium browser via Playwright.
+ * 3. If the browser also lands on a login wall, throw LoginWallError.
+ * 4. If curl gets a hard 403/401, throw SiteBlockedError (no browser retry — the
+ *    site is actively blocking and a browser is unlikely to help).
+ */
+export async function scrapePage(url: string): Promise<ScrapedPage> {
+  const log = logger.child({ component: "scraper", url });
+
+  log.debug("Fetching page");
+
+  // ── Step 1: try curl ──
+  const { body: html, effectiveUrl } = await fetchWithStrategies(url, log);
+
+  // ── Step 2: check for login/auth wall ──
+  const loginWallReason = detectLoginWall(html, effectiveUrl, url);
+
+  if (loginWallReason) {
+    log.warn({ effectiveUrl, reason: loginWallReason }, "curl landed on login/auth wall — trying browser fallback");
+
+    // ── Step 3: browser fallback ──
+    let browserHtml: string;
+    let browserEffectiveUrl: string;
+    try {
+      const result = await fetchWithBrowser(url, log);
+      browserHtml = result.html;
+      browserEffectiveUrl = result.effectiveUrl;
+    } catch (browserError) {
+      const msg = browserError instanceof Error ? browserError.message : "Unknown error";
+      log.warn({ err: msg }, "Browser fallback failed");
+      throw new LoginWallError(effectiveUrl);
+    }
+
+    // Check if the browser also hit a login wall
+    const browserLoginWallReason = detectLoginWall(browserHtml, browserEffectiveUrl, url);
+    if (browserLoginWallReason) {
+      log.warn({ browserEffectiveUrl, reason: browserLoginWallReason }, "Browser fallback also landed on login/auth wall");
+      throw new LoginWallError(browserEffectiveUrl);
+    }
+
+    // Browser succeeded — extract from browser-rendered HTML
+    const extracted = extractFromHtml(browserHtml);
+    const result: ScrapedPage = {
+      ...extracted,
+      usedBrowserFallback: true,
+    };
+
+    log.info(
+      {
+        contentLength: result.content.length,
+        hasImage: !!result.imageUrl,
+        effectiveUrl: browserEffectiveUrl,
+        usedBrowserFallback: true,
+        title: result.title.slice(0, 100),
+      },
+      "Page scraped successfully (browser fallback)"
+    );
+
+    return result;
+  }
+
+  // ── Step 4: curl succeeded with real content — extract ──
+  const extracted = extractFromHtml(html);
+
   log.info(
     {
-      contentLength: content.length,
-      hasImage: !!imageUrl,
-      usedJsonLd: foundJsonLd,
-      title: title.trim().slice(0, 100),
+      contentLength: extracted.content.length,
+      hasImage: !!extracted.imageUrl,
+      usedJsonLd: false, // logged inside extractFromHtml if needed
+      title: extracted.title.slice(0, 100),
     },
     "Page scraped successfully"
   );
 
-  return {
-    title: title.trim(),
-    content,
-    imageUrl,
-  };
+  return extracted;
 }
 
 function findBestImage($: cheerio.CheerioAPI): string | null {

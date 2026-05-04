@@ -12,6 +12,68 @@ import {
 
 type ImportMode = "url" | "text";
 
+// ─── Progress messaging ───
+
+interface ProgressStage {
+  message: string;
+  /** Minimum ms before advancing to the next stage (approximate). */
+  minMs: number;
+}
+
+const URL_IMPORT_STAGES: ProgressStage[] = [
+  { message: "Opening recipe page…", minMs: 2000 },
+  { message: "Fetching page content…", minMs: 3000 },
+  { message: "Extracting recipe with AI…", minMs: 4000 },
+  { message: "Almost done…", minMs: 0 },
+];
+
+const TEXT_IMPORT_STAGES: ProgressStage[] = [
+  { message: "Reading recipe text…", minMs: 1500 },
+  { message: "Extracting recipe with AI…", minMs: 4000 },
+  { message: "Almost done…", minMs: 0 },
+];
+
+/**
+ * Cycles through progress stage messages while a long-running operation is in flight.
+ * Returns the current message and a cleanup function.
+ */
+function useProgressMessages(
+  active: boolean,
+  stages: ProgressStage[]
+): string {
+  const [stageIndex, setStageIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setStageIndex(0);
+      return;
+    }
+
+    let idx = 0;
+    setStageIndex(0);
+
+    function advance() {
+      idx = Math.min(idx + 1, stages.length - 1);
+      setStageIndex(idx);
+      if (idx < stages.length - 1 && stages[idx].minMs > 0) {
+        timer = setTimeout(advance, stages[idx].minMs);
+      }
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (stages[0].minMs > 0) {
+      timer = setTimeout(advance, stages[0].minMs);
+    }
+
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  return stages[Math.min(stageIndex, stages.length - 1)].message;
+}
+
 export default function NewRecipePage() {
   const router = useRouter();
   const [mode, setMode] = useState<ImportMode>("url");
@@ -27,6 +89,10 @@ export default function NewRecipePage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imageMessage, setImageMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Progress messages — use URL stages by default; text stages for text mode
+  const stages = mode === "text" ? TEXT_IMPORT_STAGES : URL_IMPORT_STAGES;
+  const progressMessage = useProgressMessages(loading, stages);
 
   // Revoke object URL on cleanup / mode switch
   useEffect(() => {
@@ -119,6 +185,7 @@ export default function NewRecipePage() {
       setLoading(false);
     }
   }
+
 
   return (
     <div className="mx-auto max-w-2xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10">
@@ -360,7 +427,7 @@ export default function NewRecipePage() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                 />
               </svg>
-              Processing with AI...
+              {progressMessage}
             </span>
           ) : (
             "Import Recipe"
