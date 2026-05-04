@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.5] — 2026-05-04
+
+_App release_
+
+- fix: resolve Kubernetes runtime issues and bump version to 0.7.5
+- docs: bring AGENTS.md up to date with current codebase
+- fix: add ca-certificates to Debian runner image
+- chore: bump chart and update changelog for v0.7.3 [skip ci]
+
 ## [0.7.4] — 2026-05-04
 
 _App release_
