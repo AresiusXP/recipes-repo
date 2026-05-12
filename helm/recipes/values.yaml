@@ -18,8 +18,7 @@ frontend:
   image:
     repository: ghcr.io/aresiusxp/recipes-frontend
     pullPolicy: IfNotPresent
-    # Defaults to Chart.appVersion when left empty
-    tag: ""
+    tag: "0.8.1"
 
   config:
     # Comma-separated list of email addresses allowed to register.
@@ -114,7 +113,7 @@ backend:
   image:
     repository: ghcr.io/aresiusxp/recipes-backend
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: "1.0.0"
 
   config:
     # URL of the scraper service (internal ClusterIP)
@@ -192,7 +191,7 @@ scraper:
   image:
     repository: ghcr.io/aresiusxp/recipes-scraper
     pullPolicy: IfNotPresent
-    tag: ""
+    tag: "1.0.0"
 
   config:
     port: "3001"
