@@ -2,6 +2,82 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.0] — 2026-05-12
+
+_Chart-only release (appVersion unchanged)_
+
+- ci: rewrite release workflows for unified Helm chart and add chart-only release
+- feat(helm): unify service charts and migrate scraper to ESLint v9
+- chore: use **/node_modules/ wildcard in .gitignore to exclude all nested node_modules
+- chore(release): bump frontend to 0.8.1
+- fix(e2e): fix Docker build issues and E2E test selectors — all tests pass
+- chore(release): bump frontend to 0.8.0
+- chore: update root .gitignore to exclude node_modules/ in all subdirectories
+- fix: address CodeRabbit frontend/scraper review — fix markAllNotificationsRead auth, viewport accessibility, FavoriteButton error handling, URL parsing safety
+- fix(backend): address CodeRabbit review findings — SQL bug, Gemini timeout, auth startup validation, error handling improvements
+- chore(frontend): remove Prisma, media route, image-storage, scraper libs — moved to backend/scraper services
+- feat: add Helm charts for all services, E2E test suite, path-based CI/CD workflows, and update AGENTS.md
+- feat(scraper): add Node.js/TypeScript scraper microservice with async job queue
+- feat(backend): add Go REST API with async recipe import, JWT auth middleware, Gemini AI, and media handling
+- feat(frontend): refactor to thin API proxy — remove Prisma/Gemini/Playwright, add api-client and async import UX
+- chore: move frontend files into frontend/ subdirectory
+- fix: create home directory for nextjs user so Chromium can launch
+- fix: grant nextjs user write access to node_modules in migrator
+- fix: resolve Kubernetes runtime issues and bump version to 0.7.5
+- docs: bring AGENTS.md up to date with current codebase
+- fix: add ca-certificates to Debian runner image
+- feat: implement browser fallback for recipe scraper
+- feat: add dismissible notifications
+- 0.7.1
+- feat: show banned-user notice and tighten recipe scraping
+- feat: add admin dashboard and moderation controls
+- docs: document Helm allowedEmails configuration
+- bug: allowedEmails missing from Helm chart
+- fix(security): add Content-Security-Policy header
+- fix(deps): patch Next.js App Router DoS vulnerability
+- feat(auth): add Microsoft sign-in and account linking
+- fix(scraper): use curl to bypass TLS fingerprint blocking
+- fix(import): handle bot-blocked recipe pages gracefully
+- fix(docker): add --accept-data-loss to migrator db push command
+- fix(db): add --accept-data-loss flag to db:push for schema migrations
+- ci: automate changelog updates for release tags
+- feat(recipes): overhaul multilingual translation flow
+- feat(ui): give recipes app a cozy visual refresh
+- feat(recipes): add image upload controls for create and edit
+- fix(scraper): use browser-like headers for blocked sites
+- feat(cook-this-week): add weekly meal planning
+- fix(recipe-detail): prevent mobile header overflow
+- feat(sharing): add recipe sharing with in-app notifications
+- fix(docker): chown runner-stage files for Next.js cache writes
+- fix(ci): restore release workflow registry step id broken by rebase
+- feat(logging): add structured JSON logs for Loki
+- ci: lowercase GHCR image and chart paths
+- feat: add recipe view toggle and theme customization
+- feat: add persistent list view for recipe lists
+- fix: serve runtime media in standalone deployments
+- Changed favicon and logo in navbar
+- fix: pass DATABASE_URL directly to migrator db push
+- fix: remove unsupported Prisma db push flag
+- fix: move Prisma schema init to a dedicated migrator image
+- fix: fail fast on schema init and tune pod DNS
+- fix: start Google OAuth from the client on login
+- fix: trust auth.js host headers behind reverse proxies
+- fix: lowercase GHCR registry paths in release workflows
+- fix: ensure Docker builder creates public directory
+- ci: ignore generated Prisma files in lint
+- test: add Vitest suite and CI checks
+- ci: automate GHCR image and Helm chart releases
+- feat: restrict new registrations with an email allowlist
+- build: override @auth/core to patch next-auth CVE
+- feat: let users manage profile pictures in settings
+- feat: move account actions into avatar menu
+- feat: add configurable recipe translation controls
+- updated agents
+- feat: add recipe favorites and configurable Gemini output
+- feat: bootstrap recipes app with AI import and deployment stack
+- Initial commit from Create Next App
+- first commit
+
 ## [0.7.7] — 2026-05-04
 
 _App release_
