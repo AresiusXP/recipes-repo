@@ -1,182 +1,88 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/require-auth";
+/**
+ * Notification server actions — thin proxies to the Go backend API.
+ */
+
+import {
+  getNotifications as apiGetNotifications,
+  markNotificationRead as apiMarkNotificationRead,
+  deleteNotification as apiDeleteNotification,
+  type AppNotification,
+} from "@/lib/api-client";
 import { revalidatePath } from "next/cache";
-import { logger, serializeError } from "@/lib/logger";
 
-// ─── Types ───
+export type { AppNotification as Notification } from "@/lib/api-client";
 
-export interface NotificationItem {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
-  recipeId: string | null;
-  sender: {
-    id: string;
-    name: string | null;
-    image: string | null;
-  } | null;
+// NotificationItem is an alias for Notification (used by some components)
+export type NotificationItem = AppNotification;
+
+export async function getNotificationsAction(): Promise<AppNotification[]> {
+  return apiGetNotifications();
 }
 
-// ─── Get notifications for the current user ───
+// Alias used by notifications page
+export const getNotifications = getNotificationsAction;
 
-export async function getNotifications(): Promise<NotificationItem[]> {
-  const session = await requireAuth();
-
-  const notifications = await prisma.notification.findMany({
-    where: { userId: session.user.id },
-    include: {
-      sender: {
-        select: { id: true, name: true, image: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  return notifications.map(
-    (n: {
-      id: string;
-      type: string;
-      title: string;
-      message: string;
-      isRead: boolean;
-      createdAt: Date;
-      recipeId: string | null;
-      sender: { id: string; name: string | null; image: string | null } | null;
-    }) => ({
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      message: n.message,
-      isRead: n.isRead,
-      createdAt: n.createdAt.toISOString(),
-      recipeId: n.recipeId,
-      sender: n.sender,
-    })
-  );
-}
-
-// ─── Get unread notification count ───
-
-export async function getUnreadNotificationCount(): Promise<number> {
-  const session = await requireAuth();
-
-  const count = await prisma.notification.count({
-    where: { userId: session.user.id, isRead: false },
-  });
-
-  return count;
-}
-
-// ─── Mark a single notification as read ───
-
-export async function markNotificationRead(
-  notificationId: string
+export async function markNotificationReadAction(
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({
-    action: "markNotificationRead",
-    notificationId,
-    userId: session.user.id,
-  });
-
-  try {
-    const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
-      select: { userId: true },
-    });
-
-    if (!notification || notification.userId !== session.user.id) {
-      log.warn("Mark-read rejected: notification not found or ownership mismatch");
-      return { success: false, error: "Notification not found." };
-    }
-
-    await prisma.notification.update({
-      where: { id: notificationId },
-      data: { isRead: true },
-    });
-
-    log.info("Notification marked as read");
-
-    revalidatePath("/notifications");
-    revalidatePath("/", "layout");
-
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update notification";
-    log.error({ err: serializeError(error) }, "Unexpected error marking notification read");
-    return { success: false, error: message };
-  }
+  const result = await apiMarkNotificationRead(id);
+  if (result.success) revalidatePath("/notifications");
+  return result;
 }
 
-// ─── Dismiss (permanently delete) a single notification ───
+// Alias used by NotificationsList component
+export const markNotificationRead = markNotificationReadAction;
 
-export async function dismissNotification(
-  notificationId: string
+export async function deleteNotificationAction(
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({
-    action: "dismissNotification",
-    notificationId,
-    userId: session.user.id,
-  });
-
-  try {
-    const notification = await prisma.notification.findUnique({
-      where: { id: notificationId },
-      select: { userId: true },
-    });
-
-    if (!notification || notification.userId !== session.user.id) {
-      log.warn("Dismiss rejected: notification not found or ownership mismatch");
-      return { success: false, error: "Notification not found." };
-    }
-
-    await prisma.notification.delete({
-      where: { id: notificationId },
-    });
-
-    log.info("Notification dismissed");
-
-    revalidatePath("/notifications");
-    revalidatePath("/", "layout");
-
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to dismiss notification";
-    log.error({ err: serializeError(error) }, "Unexpected error dismissing notification");
-    return { success: false, error: message };
-  }
+  const result = await apiDeleteNotification(id);
+  if (result.success) revalidatePath("/notifications");
+  return result;
 }
 
-// ─── Mark all notifications as read ───
+// Alias used by NotificationsList component
+export const dismissNotification = deleteNotificationAction;
 
+/**
+ * Mark all notifications as read for the current user.
+ */
 export async function markAllNotificationsRead(): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({
-    action: "markAllNotificationsRead",
-    userId: session.user.id,
-  });
+  const { auth } = await import("@/lib/auth");
+  const { redirect } = await import("next/navigation");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = (session as NonNullable<typeof session>).user!.id;
 
+  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
   try {
-    await prisma.notification.updateMany({
-      where: { userId: session.user.id, isRead: false },
-      data: { isRead: true },
+    const res = await fetch(`${BACKEND_URL}/api/notifications/read-all`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${userId}` },
     });
-
-    log.info("All notifications marked as read");
-
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      return { success: false, error: err.error || "Failed" };
+    }
     revalidatePath("/notifications");
-    revalidatePath("/", "layout");
-
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update notifications";
-    log.error({ err: serializeError(error) }, "Unexpected error marking all notifications read");
-    return { success: false, error: message };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed" };
   }
 }
+
+/**
+ * Get the count of unread notifications for the current user.
+ * Used by the Navbar to show a badge.
+ */
+export async function getUnreadNotificationCount(): Promise<number> {
+  try {
+    const notifications = await apiGetNotifications();
+    return notifications.filter((n) => !n.isRead).length;
+  } catch {
+    return 0;
+  }
+}
+

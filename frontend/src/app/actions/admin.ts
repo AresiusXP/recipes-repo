@@ -1,153 +1,66 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/admin";
-import { logger } from "@/lib/logger";
+/**
+ * Admin server actions — thin proxies to the Go backend API.
+ */
 
-const log = logger.child({ component: "admin-actions" });
+import {
+  getAdminUsers as apiGetAdminUsers,
+  banUser as apiBanUser,
+  unbanUser as apiUnbanUser,
+} from "@/lib/api-client";
+import type { AdminUser } from "@/lib/api-client";
 
-export interface AdminUser {
-  id: string;
-  name: string | null;
-  email: string | null;
-  image: string | null;
-  createdAt: Date;
-  lastLoginAt: Date | null;
-  isBanned: boolean;
-  bannedAt: Date | null;
-  recipeCount: number;
-  sessionCount: number;
-  accountProviders: string[];
+export type { AdminUser } from "@/lib/api-client";
+
+export async function getAdminUsersAction(): Promise<AdminUser[]> {
+  return apiGetAdminUsers();
 }
 
-export async function listAdminUsers(): Promise<AdminUser[]> {
-  await requireAdmin();
+// Alias used by admin page
+export const listAdminUsers = getAdminUsersAction;
 
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-      createdAt: true,
-      lastLoginAt: true,
-      isBanned: true,
-      bannedAt: true,
-      _count: {
-        select: {
-          recipes: true,
-          sessions: true,
-        },
-      },
-      accounts: {
-        select: { provider: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  return users.map((u) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    image: u.image,
-    createdAt: u.createdAt,
-    lastLoginAt: u.lastLoginAt,
-    isBanned: u.isBanned,
-    bannedAt: u.bannedAt,
-    recipeCount: u._count.recipes,
-    sessionCount: u._count.sessions,
-    accountProviders: u.accounts.map((a) => a.provider),
-  }));
-}
-
-export async function banUser(
-  targetUserId: string
+export async function banUserAction(
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAdmin();
-
-  if (targetUserId === session.user.id) {
-    return { success: false, error: "You cannot ban yourself." };
-  }
-
-  const target = await prisma.user.findUnique({
-    where: { id: targetUserId },
-    select: { id: true, isBanned: true },
-  });
-
-  if (!target) {
-    return { success: false, error: "User not found." };
-  }
-
-  if (target.isBanned) {
-    return { success: false, error: "User is already banned." };
-  }
-
-  // Ban the user and immediately revoke all active sessions
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: targetUserId },
-      data: { isBanned: true, bannedAt: new Date() },
-    }),
-    prisma.session.deleteMany({ where: { userId: targetUserId } }),
-  ]);
-
-  log.info({ adminId: session.user.id, targetUserId }, "User banned");
-  revalidatePath("/admin");
-  return { success: true };
+  return apiBanUser(id);
 }
 
-export async function unbanUser(
-  targetUserId: string
+// Alias used by AdminUsersTable component
+export const banUser = banUserAction;
+
+export async function unbanUserAction(
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAdmin();
-
-  const target = await prisma.user.findUnique({
-    where: { id: targetUserId },
-    select: { id: true, isBanned: true },
-  });
-
-  if (!target) {
-    return { success: false, error: "User not found." };
-  }
-
-  if (!target.isBanned) {
-    return { success: false, error: "User is not banned." };
-  }
-
-  await prisma.user.update({
-    where: { id: targetUserId },
-    data: { isBanned: false, bannedAt: null },
-  });
-
-  log.info({ adminId: session.user.id, targetUserId }, "User unbanned");
-  revalidatePath("/admin");
-  return { success: true };
+  return apiUnbanUser(id);
 }
 
+// Alias used by AdminUsersTable component
+export const unbanUser = unbanUserAction;
+
+/**
+ * Delete a user account (admin only).
+ */
 export async function deleteUser(
-  targetUserId: string
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAdmin();
-
-  if (targetUserId === session.user.id) {
-    return { success: false, error: "You cannot delete yourself." };
+  const { auth } = await import("@/lib/auth");
+  const { redirect } = await import("next/navigation");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = session!.user!.id;
+  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/admin/users/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${userId}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      return { success: false, error: err.error || "Failed to delete user" };
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed to delete user" };
   }
-
-  const target = await prisma.user.findUnique({
-    where: { id: targetUserId },
-    select: { id: true },
-  });
-
-  if (!target) {
-    return { success: false, error: "User not found." };
-  }
-
-  // Cascade deletes handle accounts, sessions, recipes, notifications
-  await prisma.user.delete({ where: { id: targetUserId } });
-
-  log.info({ adminId: session.user.id, targetUserId }, "User deleted");
-  revalidatePath("/admin");
-  return { success: true };
 }

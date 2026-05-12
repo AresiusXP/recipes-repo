@@ -1,941 +1,176 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/require-auth";
-import { scrapePage, SiteBlockedError, LoginWallError } from "@/lib/scraper";
-import { extractRecipeWithGemini, type TargetLanguage } from "@/lib/gemini";
-import { downloadImage, deleteImage, duplicateImage, saveUploadedImage, isLocalMediaPath } from "@/lib/image-storage";
-import { logger, serializeError } from "@/lib/logger";
-import { parseDayMonthYear } from "@/lib/cook-this-week";
+/**
+ * Recipe server actions — thin proxies to the Go backend API.
+ * Components import from here; the actual logic lives in the backend.
+ */
+
+import {
+  listRecipes,
+  getRecipe,
+  createRecipe as apiCreateRecipe,
+  updateRecipe as apiUpdateRecipe,
+  deleteRecipe as apiDeleteRecipe,
+  importRecipeFromUrl as apiImportRecipeFromUrl,
+  importRecipeFromText as apiImportRecipeFromText,
+  getImportJobStatus,
+  translateRecipe as apiTranslateRecipe,
+  shareRecipe as apiShareRecipe,
+  toggleFavorite as apiToggleFavorite,
+  setCookThisWeek as apiSetCookThisWeek,
+  removeCookThisWeek as apiRemoveCookThisWeek,
+  getOtherUsers as apiGetOtherUsers,
+} from "@/lib/api-client";
+import type {
+  Recipe,
+  RecipeListItem,
+  RecipeFormData,
+  ImportJobStatus,
+  ShareableUser,
+} from "@/lib/api-client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { randomUUID } from "crypto";
 
-// ─── Types ───
+export type { Recipe, RecipeListItem, RecipeFormData, ImportJobStatus, ShareableUser } from "@/lib/api-client";
 
+// Re-export types that components expect from the old actions
 export interface ImportResult {
   success: boolean;
   recipeId?: string;
+  jobId?: string;
   error?: string;
-  /** True when the site actively blocked the automated import request. */
   siteBlocked?: boolean;
-  /** The URL that was attempted (only set when siteBlocked is true). */
   blockedUrl?: string;
-  preview?: {
-    title: string;
-    description: string;
-    ingredients: string[];
-    steps: string[];
-    tags: string[];
-    imagePath: string | null;
-    sourceUrl: string;
-  };
 }
 
-export interface RecipeFormData {
-  title: string;
-  description: string;
-  ingredients: string[];
-  steps: string[];
-  tags: string[];
-  sourceUrl?: string;
-  imagePath?: string | null;
+export async function getRecipes(params?: {
+  q?: string;
+  favorites?: boolean;
+  cookThisWeek?: boolean;
+  tags?: string[];
+}): Promise<RecipeListItem[]> {
+  return listRecipes(params);
 }
 
-// ─── Import from URL ───
-
-export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
-  const session = await requireAuth();
-  const operationId = randomUUID();
-  const log = logger.child({ action: "importRecipeFromUrl", operationId, userId: session.user.id });
-
-  log.info({ url }, "Recipe import from URL started");
-
-  try {
-    // Validate URL
-    new URL(url);
-  } catch {
-    log.warn({ url }, "Recipe import rejected: invalid URL");
-    return { success: false, error: "Invalid URL provided" };
-  }
-
-  try {
-    // Load user translation preference
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { autoTranslateLanguage: true },
-    });
-    const targetLanguage = (user?.autoTranslateLanguage as TargetLanguage | null) ?? null;
-
-    // Scrape the page
-    let scraped;
-    try {
-      log.debug({ url }, "Scraping page");
-      scraped = await scrapePage(url);
-      log.debug({ url, contentLength: scraped.content.length, hasImage: !!scraped.imageUrl }, "Page scraped successfully");
-    } catch (scrapeError) {
-      log.warn({ url, err: serializeError(scrapeError) }, "Page scraping failed");
-      if (scrapeError instanceof SiteBlockedError) {
-        return {
-          success: false,
-          siteBlocked: true,
-          blockedUrl: url,
-          error: `This website doesn't allow automated import (${scrapeError.status}). Open the page in your browser, copy all the recipe text, then use "Paste Recipe Text" to import it.`,
-        };
-      }
-      if (scrapeError instanceof LoginWallError) {
-        return {
-          success: false,
-          siteBlocked: true,
-          blockedUrl: url,
-          error: `This page requires a login or subscription. Open the page in your browser while logged in, copy all the recipe text, then use "Paste Recipe Text" to import it.`,
-        };
-      }
-      const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
-      return {
-        success: false,
-        error: `Could not fetch the page: ${msg}. Try pasting the recipe text manually.`,
-      };
-    }
-
-    // Extract recipe with Gemini
-    let recipe;
-    try {
-      log.debug({ url, targetLanguage }, "Extracting recipe with Gemini");
-      recipe = await extractRecipeWithGemini(scraped.content, url, { targetLanguage });
-      log.debug({ url, detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
-    } catch (aiError) {
-      const msg = aiError instanceof Error ? aiError.message : "Unknown error";
-      log.warn({ url, err: serializeError(aiError) }, "Gemini recipe extraction failed");
-      return {
-        success: false,
-        error: `Could not extract a recipe from this page: ${msg}. Try pasting the recipe text manually.`,
-      };
-    }
-
-    // Download image if available
-    let imagePath: string | null = null;
-    if (scraped.imageUrl) {
-      // Handle relative URLs
-      let absoluteImageUrl = scraped.imageUrl;
-      try {
-        absoluteImageUrl = new URL(scraped.imageUrl, url).toString();
-      } catch {
-        // keep as-is if already absolute
-      }
-      imagePath = await downloadImage(absoluteImageUrl);
-      if (!imagePath) {
-        log.warn({ url, imageUrl: absoluteImageUrl }, "Image download returned null; continuing without image");
-      }
-    }
-
-    // Create tags
-    const tagRecords = await Promise.all(
-      recipe.tags.map(async (name) => {
-        return prisma.tag.upsert({
-          where: { name },
-          update: {},
-          create: { name },
-        });
-      })
-    );
-
-    // Determine translation state
-    const isEnglish = recipe.detectedLanguage === "en";
-    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
-    // translatedLanguage is set whenever we extracted in a different language than the source
-    const translatedLanguage = (targetLanguage && targetLanguage !== recipe.detectedLanguage) ? targetLanguage : null;
-
-    // Create recipe
-    const created = await prisma.recipe.create({
-      data: {
-        title: recipe.title,
-        description: recipe.description,
-        sourceUrl: url,
-        imagePath,
-        ingredients: JSON.stringify(recipe.ingredients),
-        steps: JSON.stringify(recipe.steps),
-        rawContent: scraped.content.slice(0, 50000),
-        sourceLanguage: recipe.detectedLanguage,
-        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-        translatedLanguage,
-        hasBeenTranslated: translatedLanguage !== null,
-        userId: session.user.id,
-        tags: {
-          create: tagRecords.map((tag: { id: string; name: string }) => ({
-            tagId: tag.id,
-          })),
-        },
-      },
-    });
-
-    log.info(
-      {
-        recipeId: created.id,
-        url,
-        title: recipe.title,
-        detectedLanguage: recipe.detectedLanguage,
-        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-        translatedLanguage,
-        hasImage: !!imagePath,
-      },
-      "Recipe imported successfully from URL"
-    );
-
-    revalidatePath("/recipes");
-    return { success: true, recipeId: created.id };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to import recipe";
-    log.error({ url, err: serializeError(error) }, "Unexpected error during recipe import from URL");
-    return { success: false, error: message };
-  }
+export async function getRecipeById(id: string): Promise<Recipe> {
+  return getRecipe(id);
 }
 
-// ─── Import from manual text ───
-
-export async function importRecipeFromText(
-  text: string,
-  sourceUrl?: string,
-  imageFile?: File | null
-): Promise<ImportResult> {
-  const session = await requireAuth();
-  const operationId = randomUUID();
-  const log = logger.child({ action: "importRecipeFromText", operationId, userId: session.user.id });
-
-  log.info({ textLength: text.length, hasSourceUrl: !!sourceUrl, hasImage: !!imageFile }, "Recipe import from text started");
-
-  if (!text.trim()) {
-    log.warn("Recipe import rejected: empty text");
-    return { success: false, error: "Recipe text cannot be empty" };
-  }
-
-  try {
-    // Load user translation preference
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { autoTranslateLanguage: true },
-    });
-    const targetLanguage = (user?.autoTranslateLanguage as TargetLanguage | null) ?? null;
-
-    log.debug({ targetLanguage }, "Extracting recipe from text with Gemini");
-    const recipe = await extractRecipeWithGemini(
-      text,
-      sourceUrl || "manual entry",
-      { targetLanguage }
-    );
-    log.debug({ detectedLanguage: recipe.detectedLanguage, tagCount: recipe.tags.length }, "Gemini extraction succeeded");
-
-    const tagRecords = await Promise.all(
-      recipe.tags.map(async (name) => {
-        return prisma.tag.upsert({
-          where: { name },
-          update: {},
-          create: { name },
-        });
-      })
-    );
-
-    // Save uploaded image if provided
-    let imagePath: string | null = null;
-    if (imageFile && imageFile.size > 0) {
-      log.debug({ fileSize: imageFile.size, fileType: imageFile.type }, "Saving uploaded recipe image");
-      imagePath = await saveUploadedImage(imageFile);
-      if (!imagePath) {
-        log.warn({ fileSize: imageFile.size, fileType: imageFile.type }, "Recipe image save failed: unsupported type or size limit exceeded");
-        return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
-      }
-    }
-
-    // Determine translation state
-    const isEnglish = recipe.detectedLanguage === "en";
-    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
-    // translatedLanguage is set whenever we extracted in a different language than the source
-    const translatedLanguage = (targetLanguage && targetLanguage !== recipe.detectedLanguage) ? targetLanguage : null;
-
-    const created = await prisma.recipe.create({
-      data: {
-        title: recipe.title,
-        description: recipe.description,
-        sourceUrl: sourceUrl || null,
-        imagePath,
-        ingredients: JSON.stringify(recipe.ingredients),
-        steps: JSON.stringify(recipe.steps),
-        rawContent: text.slice(0, 50000),
-        sourceLanguage: recipe.detectedLanguage,
-        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-        translatedLanguage,
-        hasBeenTranslated: translatedLanguage !== null,
-        userId: session.user.id,
-        tags: {
-          create: tagRecords.map((tag: { id: string; name: string }) => ({
-            tagId: tag.id,
-          })),
-        },
-      },
-    });
-
-    log.info(
-      {
-        recipeId: created.id,
-        title: recipe.title,
-        detectedLanguage: recipe.detectedLanguage,
-        isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-        translatedLanguage,
-        hasImage: !!imagePath,
-      },
-      "Recipe imported successfully from text"
-    );
-
-    revalidatePath("/recipes");
-    return { success: true, recipeId: created.id };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to process recipe";
-    log.error({ err: serializeError(error) }, "Unexpected error during recipe import from text");
-    return { success: false, error: message };
-  }
+export async function createRecipeAction(
+  data: RecipeFormData
+): Promise<{ success: boolean; recipeId?: string; error?: string }> {
+  const result = await apiCreateRecipe(data);
+  if (result.success) revalidatePath("/recipes");
+  return result;
 }
 
-// ─── Translate existing recipe ───
-
-/**
- * Translates an existing recipe into the specified target language, or reverts it
- * to the original language when targetLanguage is null.
- *
- * Rules:
- * - For URL-imported recipes: always re-scrapes the original source URL and
- *   extracts/translates from that fresh content. Fails if the URL is unreachable.
- * - For manual-import recipes: uses the stored rawContent once only.
- *   After a translation has been applied, further NEW translations are rejected;
- *   but reverting to original is always allowed (it doesn't consume the one-time limit again).
- */
-export async function translateRecipe(
-  recipeId: string,
-  targetLanguage: TargetLanguage | null
-): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const operationId = randomUUID();
-  const log = logger.child({ action: "translateRecipe", operationId, recipeId, userId: session.user.id, targetLanguage });
-
-  log.info("Recipe translation started");
-
-  const recipe = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: {
-      userId: true,
-      sourceUrl: true,
-      rawContent: true,
-      sourceLanguage: true,
-      hasBeenTranslated: true,
-      translatedLanguage: true,
-    },
-  });
-
-  if (!recipe || recipe.userId !== session.user.id) {
-    log.warn("Translation rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found" };
-  }
-
-  const isManualImport = !recipe.sourceUrl;
-
-  // Manual imports: only allow one NEW translation (not revert to original)
-  if (isManualImport && targetLanguage !== null && recipe.hasBeenTranslated) {
-    log.warn("Translation rejected: manual-import recipe has already been translated once");
-    return { success: false, error: "This recipe was entered manually and has already been translated. Further translation is not available." };
-  }
-
-  try {
-    let geminiResult: { title: string; description: string; ingredients: string[]; steps: string[]; tags: string[] };
-    let isUrlRecipe = false;
-
-    if (!isManualImport) {
-      // URL-imported recipe: always re-scrape from the original link
-      log.debug({ sourceUrl: recipe.sourceUrl }, "Re-scraping original source URL for translation");
-      let scraped;
-      try {
-        scraped = await scrapePage(recipe.sourceUrl!);
-        log.debug({ contentLength: scraped.content.length }, "Source page re-scraped successfully");
-      } catch (scrapeError) {
-        const msg = scrapeError instanceof Error ? scrapeError.message : "Unknown error";
-        log.warn({ sourceUrl: recipe.sourceUrl, err: serializeError(scrapeError) }, "Re-scrape failed for translation");
-        if (scrapeError instanceof LoginWallError) {
-          return {
-            success: false,
-            error: `The original recipe page now requires a login or subscription. Translation is not available.`,
-          };
-        }
-        return {
-          success: false,
-          error: `Could not reach the original recipe page: ${msg}. The translation source must be the original link.`,
-        };
-      }
-
-      const result = await extractRecipeWithGemini(scraped.content, recipe.sourceUrl!, { targetLanguage });
-      geminiResult = {
-        title: result.title,
-        description: result.description,
-        ingredients: result.ingredients,
-        steps: result.steps,
-        tags: result.tags,
-      };
-      isUrlRecipe = true;
-      log.debug({ targetLanguage }, "Recipe extracted from re-scraped source with target language");
-    } else {
-      // Manual import: re-extract from stored raw content (with or without target language)
-      if (!recipe.rawContent) {
-        log.warn("Translation/revert rejected: manual-import recipe has no stored raw content");
-        return { success: false, error: "No source content available for translation." };
-      }
-      log.debug({ sourceLanguage: recipe.sourceLanguage, targetLanguage }, "Re-extracting manual-import recipe with Gemini");
-      const result = await extractRecipeWithGemini(recipe.rawContent, "manual entry", { targetLanguage });
-      geminiResult = {
-        title: result.title,
-        description: result.description,
-        ingredients: result.ingredients,
-        steps: result.steps,
-        tags: result.tags,
-      };
-    }
-
-    const isEnglish = recipe.sourceLanguage === "en";
-    const isTranslatedToEnglish = targetLanguage === "en" && !isEnglish;
-    // translatedLanguage is set whenever we extracted in a different language than the source
-    const newTranslatedLanguage = (targetLanguage && targetLanguage !== recipe.sourceLanguage) ? targetLanguage : null;
-
-    // For URL recipes, also refresh tags from the re-scrape
-    if (isUrlRecipe && geminiResult.tags.length > 0) {
-      const tagRecords = await Promise.all(
-        geminiResult.tags.map(async (name) => {
-          return prisma.tag.upsert({
-            where: { name },
-            update: {},
-            create: { name },
-          });
-        })
-      );
-      await prisma.$transaction([
-        prisma.recipeTag.deleteMany({ where: { recipeId } }),
-        prisma.recipe.update({
-          where: { id: recipeId },
-          data: {
-            title: geminiResult.title,
-            description: geminiResult.description,
-            ingredients: JSON.stringify(geminiResult.ingredients),
-            steps: JSON.stringify(geminiResult.steps),
-            isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-            translatedLanguage: newTranslatedLanguage,
-            ...(targetLanguage !== null ? { hasBeenTranslated: true } : {}),
-            tags: {
-              create: tagRecords.map((tag: { id: string; name: string }) => ({
-                tagId: tag.id,
-              })),
-            },
-          },
-        }),
-      ]);
-    } else {
-      await prisma.recipe.update({
-        where: { id: recipeId },
-        data: {
-          title: geminiResult.title,
-          description: geminiResult.description,
-          ingredients: JSON.stringify(geminiResult.ingredients),
-          steps: JSON.stringify(geminiResult.steps),
-          isTranslatedToEnglish: isEnglish || isTranslatedToEnglish,
-          translatedLanguage: newTranslatedLanguage,
-          // hasBeenTranslated stays true once set; reverting to original doesn't reset it
-          ...(targetLanguage !== null ? { hasBeenTranslated: true } : {}),
-        },
-      });
-    }
-
-    log.info({ targetLanguage, isManualImport }, targetLanguage ? "Recipe translated successfully" : "Recipe reverted to original language");
-
-    revalidatePath("/recipes");
-    revalidatePath(`/recipes/${recipeId}`);
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to translate recipe";
-    log.error({ err: serializeError(error) }, "Unexpected error during recipe translation");
-    return { success: false, error: message };
-  }
-}
-
-// ─── Update recipe ───
-
-export async function updateRecipe(
-  recipeId: string,
+export async function updateRecipeAction(
+  id: string,
   data: RecipeFormData,
-  imageAction: "keep" | "replace" | "remove" = "keep",
-  imageFile?: File | null
+  _imageAction?: string,
+  _imageFile?: File
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const operationId = randomUUID();
-  const log = logger.child({ action: "updateRecipe", operationId, recipeId, userId: session.user.id });
-
-  log.info({ imageAction, hasNewImage: !!imageFile }, "Recipe update started");
-
-  // Verify ownership and fetch current imagePath
-  const existing = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: { userId: true, imagePath: true },
-  });
-
-  if (!existing || existing.userId !== session.user.id) {
-    log.warn("Update rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found" };
-  }
-
-  // Resolve the new imagePath
-  let newImagePath: string | null | undefined = undefined; // undefined = no change
-
-  if (imageAction === "remove") {
-    newImagePath = null;
-  } else if (imageAction === "replace" && imageFile && imageFile.size > 0) {
-    log.debug({ fileSize: imageFile.size, fileType: imageFile.type }, "Saving new recipe image");
-    const saved = await saveUploadedImage(imageFile);
-    if (!saved) {
-      log.warn({ fileSize: imageFile.size, fileType: imageFile.type }, "New recipe image save failed");
-      return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
-    }
-    newImagePath = saved;
-  }
-
-  try {
-    // Upsert tags
-    const tagRecords = await Promise.all(
-      data.tags.map(async (name) => {
-        return prisma.tag.upsert({
-          where: { name: name.toLowerCase().trim() },
-          update: {},
-          create: { name: name.toLowerCase().trim() },
-        });
-      })
-    );
-
-    // Build recipe update data
-    const recipeUpdateData: Record<string, unknown> = {
-      title: data.title,
-      description: data.description,
-      ingredients: JSON.stringify(data.ingredients),
-      steps: JSON.stringify(data.steps),
-      tags: {
-        create: tagRecords.map((tag: { id: string; name: string }) => ({
-          tagId: tag.id,
-        })),
-      },
-    };
-
-    if (newImagePath !== undefined) {
-      recipeUpdateData.imagePath = newImagePath;
-    }
-
-    // Delete existing tag associations and update recipe in a transaction
-    await prisma.$transaction([
-      prisma.recipeTag.deleteMany({
-        where: { recipeId },
-      }),
-      prisma.recipe.update({
-        where: { id: recipeId },
-        data: recipeUpdateData,
-      }),
-    ]);
-
-    // Delete the old image file after the DB update succeeds
-    if (newImagePath !== undefined && existing.imagePath && isLocalMediaPath(existing.imagePath)) {
-      log.debug({ oldImagePath: existing.imagePath }, "Deleting old recipe image file");
-      await deleteImage(existing.imagePath);
-    }
-
-    log.info({ tagCount: tagRecords.length, imageAction }, "Recipe updated successfully");
-
+  const result = await apiUpdateRecipe(id, data);
+  if (result.success) {
+    revalidatePath(`/recipes/${id}`);
     revalidatePath("/recipes");
-    revalidatePath(`/recipes/${recipeId}`);
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update recipe";
-    log.error({ err: serializeError(error) }, "Unexpected error during recipe update");
-    return { success: false, error: message };
   }
+  return result;
 }
 
-// ─── Delete recipe ───
-
-export async function deleteRecipe(recipeId: string): Promise<void> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "deleteRecipe", recipeId, userId: session.user.id });
-
-  log.info("Recipe deletion started");
-
-  const recipe = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: { userId: true, imagePath: true },
-  });
-
-  if (!recipe || recipe.userId !== session.user.id) {
-    log.warn("Deletion rejected: recipe not found or ownership mismatch");
-    return;
-  }
-
-  // Delete the image file if it exists and is a local file
-  if (recipe.imagePath && isLocalMediaPath(recipe.imagePath)) {
-    log.debug({ imagePath: recipe.imagePath }, "Deleting recipe image file");
-    await deleteImage(recipe.imagePath);
-  }
-
-  await prisma.recipe.delete({
-    where: { id: recipeId },
-  });
-
-  log.info({ hadImage: !!recipe.imagePath }, "Recipe deleted successfully");
-
+export async function deleteRecipeAction(id: string): Promise<void> {
+  await apiDeleteRecipe(id);
   revalidatePath("/recipes");
   redirect("/recipes");
 }
 
-// ─── Cook This Week ───
-
-export async function setCookThisWeek(
-  recipeId: string,
-  expiryDateStr: string
-): Promise<{ success: boolean; cookThisWeekUntil?: string; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "setCookThisWeek", recipeId, userId: session.user.id });
-
-  const recipe = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: { userId: true },
-  });
-
-  if (!recipe || recipe.userId !== session.user.id) {
-    log.warn("setCookThisWeek rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found" };
-  }
-
-  let expiryDate: Date;
-  try {
-    expiryDate = parseDayMonthYear(expiryDateStr);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Invalid date";
-    log.warn({ expiryDateStr }, "setCookThisWeek rejected: invalid date");
-    return { success: false, error: message };
-  }
-
-  const updated = await prisma.recipe.update({
-    where: { id: recipeId },
-    data: { cookThisWeekUntil: expiryDate },
-    select: { cookThisWeekUntil: true },
-  });
-
-  log.info({ expiryDate }, "Recipe marked as cook-this-week");
-
-  revalidatePath("/recipes");
-  revalidatePath(`/recipes/${recipeId}`);
-
-  return {
-    success: true,
-    cookThisWeekUntil: updated.cookThisWeekUntil?.toISOString(),
-  };
+export async function importRecipeFromUrlAction(
+  url: string
+): Promise<ImportResult> {
+  const result = await apiImportRecipeFromUrl(url);
+  return result;
 }
 
-export async function removeCookThisWeek(
-  recipeId: string
+export async function getImportJobStatusAction(
+  jobId: string
+): Promise<ImportJobStatus> {
+  return getImportJobStatus(jobId);
+}
+
+export async function translateRecipeAction(
+  id: string,
+  targetLanguage: string | null
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "removeCookThisWeek", recipeId, userId: session.user.id });
-
-  const recipe = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: { userId: true },
-  });
-
-  if (!recipe || recipe.userId !== session.user.id) {
-    log.warn("removeCookThisWeek rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found" };
-  }
-
-  await prisma.recipe.update({
-    where: { id: recipeId },
-    data: { cookThisWeekUntil: null },
-  });
-
-  log.info("Cook-this-week mark removed");
-
-  revalidatePath("/recipes");
-  revalidatePath(`/recipes/${recipeId}`);
-
-  return { success: true };
+  const result = await apiTranslateRecipe(id, targetLanguage);
+  if (result.success) revalidatePath(`/recipes/${id}`);
+  return result;
 }
 
-// ─── Toggle favorite ───
-
-export async function toggleFavorite(
-  recipeId: string
-): Promise<{ success: boolean; isFavorite?: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "toggleFavorite", recipeId, userId: session.user.id });
-
-  const recipe = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    select: { userId: true, isFavorite: true },
-  });
-
-  if (!recipe || recipe.userId !== session.user.id) {
-    log.warn("Toggle favorite rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found" };
-  }
-
-  const updated = await prisma.recipe.update({
-    where: { id: recipeId },
-    data: { isFavorite: !recipe.isFavorite },
-    select: { isFavorite: true },
-  });
-
-  log.info({ isFavorite: updated.isFavorite }, "Recipe favorite status toggled");
-
-  revalidatePath("/recipes");
-  revalidatePath(`/recipes/${recipeId}`);
-  revalidatePath("/recipes/favorites");
-
-  return { success: true, isFavorite: updated.isFavorite };
-}
-
-// ─── Search & filter ───
-
-export async function searchRecipes(
-  query: string,
-  tagNames: string[],
-  favoritesOnly = false,
-  cookThisWeekOnly = false
-) {
-  const session = await requireAuth();
-
-  const where: Record<string, unknown> = {
-    userId: session.user.id,
-  };
-
-  if (favoritesOnly) {
-    where.isFavorite = true;
-  }
-
-  if (cookThisWeekOnly) {
-    // Compare against the start of today in UTC so recipes are visible for the
-    // full calendar date they were marked until, regardless of the time of day.
-    const startOfToday = new Date();
-    startOfToday.setUTCHours(0, 0, 0, 0);
-    where.cookThisWeekUntil = { gte: startOfToday };
-  }
-
-  // Text search on title and ingredients
-  if (query.trim()) {
-    where.OR = [
-      { title: { contains: query.trim() } },
-      { ingredients: { contains: query.trim() } },
-      { description: { contains: query.trim() } },
-    ];
-  }
-
-  // Tag filtering
-  if (tagNames.length > 0) {
-    where.tags = {
-      some: {
-        tag: {
-          name: { in: tagNames },
-        },
-      },
-    };
-  }
-
-  const recipes = await prisma.recipe.findMany({
-    where,
-    include: {
-      tags: {
-        include: {
-          tag: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  return recipes.map((r: { id: string; title: string; description: string | null; imagePath: string | null; sourceUrl: string | null; isFavorite: boolean; cookThisWeekUntil: Date | null; tags: { tag: { name: string } }[]; createdAt: Date }) => ({
-    id: r.id,
-    title: r.title,
-    description: r.description,
-    imagePath: r.imagePath,
-    sourceUrl: r.sourceUrl,
-    isFavorite: r.isFavorite,
-    cookThisWeekUntil: r.cookThisWeekUntil ? r.cookThisWeekUntil.toISOString() : null,
-    tags: r.tags.map((rt: { tag: { name: string } }) => rt.tag.name),
-    createdAt: r.createdAt.toISOString(),
-  }));
-}
-
-// ─── Get all tags for the current user ───
-
-export async function getUserTags() {
-  const session = await requireAuth();
-
-  const tags = await prisma.tag.findMany({
-    where: {
-      recipes: {
-        some: {
-          recipe: {
-            userId: session.user.id,
-          },
-        },
-      },
-    },
-    orderBy: { name: "asc" },
-  });
-
-  return tags.map((t: { name: string }) => t.name);
-}
-
-// ─── List other users (for share picker) ───
-
-export interface ShareableUser {
-  id: string;
-  name: string | null;
-  email: string | null;
-  image: string | null;
-}
-
-export async function getOtherUsers(): Promise<ShareableUser[]> {
-  const session = await requireAuth();
-
-  const users = await prisma.user.findMany({
-    where: { id: { not: session.user.id } },
-    select: { id: true, name: true, email: true, image: true },
-    orderBy: { name: "asc" },
-  });
-
-  return users;
-}
-
-// ─── Share recipe ───
-
-export async function shareRecipe(
-  recipeId: string,
+export async function shareRecipeAction(
+  id: string,
   recipientUserId: string
 ): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const operationId = randomUUID();
-  const log = logger.child({ action: "shareRecipe", operationId, recipeId, userId: session.user.id, recipientUserId });
+  return apiShareRecipe(id, recipientUserId);
+}
 
-  log.info("Recipe share started");
+export async function toggleFavoriteAction(
+  id: string
+): Promise<{ success: boolean; isFavorite?: boolean; error?: string }> {
+  const result = await apiToggleFavorite(id);
+  if (result.success) revalidatePath(`/recipes/${id}`);
+  return result;
+}
 
-  if (recipientUserId === session.user.id) {
-    log.warn("Share rejected: cannot share recipe with yourself");
-    return { success: false, error: "You cannot share a recipe with yourself." };
-  }
+export async function setCookThisWeekAction(
+  id: string,
+  expiryDate: string
+): Promise<{ success: boolean; cookThisWeekUntil?: string; error?: string }> {
+  const result = await apiSetCookThisWeek(id, expiryDate);
+  if (result.success) revalidatePath(`/recipes/${id}`);
+  return result;
+}
 
-  // Load source recipe, verify ownership
-  const source = await prisma.recipe.findUnique({
-    where: { id: recipeId },
-    include: { tags: { include: { tag: true } } },
-  });
+export async function removeCookThisWeekAction(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  const result = await apiRemoveCookThisWeek(id);
+  if (result.success) revalidatePath(`/recipes/${id}`);
+  return result;
+}
 
-  if (!source || source.userId !== session.user.id) {
-    log.warn("Share rejected: recipe not found or ownership mismatch");
-    return { success: false, error: "Recipe not found." };
-  }
+export async function getOtherUsersAction(): Promise<ShareableUser[]> {
+  return apiGetOtherUsers();
+}
 
-  // Verify recipient exists
-  const recipient = await prisma.user.findUnique({
-    where: { id: recipientUserId },
-    select: { id: true, name: true },
-  });
+// ─── Aliases for backward compatibility with existing components ──────────────
 
-  if (!recipient) {
-    log.warn("Share rejected: recipient user not found");
-    return { success: false, error: "Recipient user not found." };
-  }
+export const searchRecipes = getRecipes;
+export const getUserTags = async (): Promise<string[]> => {
+  const recipes = await listRecipes();
+  const tagSet = new Set<string>();
+  recipes.forEach((r) => r.tags.forEach((t) => tagSet.add(t)));
+  return Array.from(tagSet).sort();
+};
+export const updateRecipe = updateRecipeAction;
+export const deleteRecipe = deleteRecipeAction;
+export const translateRecipe = translateRecipeAction;
+export const shareRecipe = shareRecipeAction;
+export const toggleFavorite = toggleFavoriteAction;
+export const setCookThisWeek = setCookThisWeekAction;
+export const removeCookThisWeek = removeCookThisWeekAction;
+export const getOtherUsers = getOtherUsersAction;
+export const importRecipeFromUrl = importRecipeFromUrlAction;
 
-  // Prevent sharing the same recipe to the same recipient more than once
-  const existingShare = await prisma.recipe.findFirst({
-    where: { userId: recipientUserId, sharedFromRecipeId: source.id },
-    select: { id: true },
-  });
-
-  if (existingShare) {
-    log.warn("Share rejected: recipe already shared with this recipient");
-    return { success: false, error: "You have already shared this recipe with that user." };
-  }
-
-  // Duplicate image so deletion of either copy doesn't affect the other
-  const copiedImagePath = source.imagePath
-    ? await duplicateImage(source.imagePath)
-    : null;
-
-  const tagNames = source.tags.map((rt: { tag: { name: string } }) => rt.tag.name);
-  const senderName = session.user.name ?? session.user.email ?? "Someone";
-
-  try {
-    // Upsert tags + create recipe copy + notification all in one transaction
-    const copied = await prisma.$transaction(async (tx) => {
-      // Upsert tags inside the transaction
-      const tagRecords = await Promise.all(
-        tagNames.map(async (name: string) => {
-          return tx.tag.upsert({
-            where: { name },
-            update: {},
-            create: { name },
-          });
-        })
-      );
-
-      const newRecipe = await tx.recipe.create({
-        data: {
-          title: source.title,
-          description: source.description,
-          sourceUrl: source.sourceUrl,
-          imagePath: copiedImagePath,
-          ingredients: source.ingredients,
-          steps: source.steps,
-          rawContent: source.rawContent,
-          sourceLanguage: source.sourceLanguage,
-          isTranslatedToEnglish: source.isTranslatedToEnglish,
-          translatedLanguage: source.translatedLanguage,
-          hasBeenTranslated: source.hasBeenTranslated,
-          isFavorite: false,
-          sharedByUserId: session.user.id,
-          sharedFromRecipeId: source.id,
-          userId: recipientUserId,
-          tags: {
-            create: tagRecords.map((tag: { id: string; name: string }) => ({
-              tagId: tag.id,
-            })),
-          },
-        },
-      });
-
-      await tx.notification.create({
-        data: {
-          type: "recipe_shared",
-          title: "Recipe shared with you",
-          message: `${senderName} shared "${source.title}" with you.`,
-          userId: recipientUserId,
-          senderUserId: session.user.id,
-          recipeId: newRecipe.id,
-        },
-      });
-
-      return newRecipe;
-    });
-
-    log.info({ copiedRecipeId: copied.id }, "Recipe shared successfully");
-
-    revalidatePath("/recipes");
-    revalidatePath("/notifications");
-
-    return { success: true };
-  } catch (error) {
-    // If the transaction failed and we already duplicated the image, clean it up
-    if (copiedImagePath && copiedImagePath !== source.imagePath) {
-      await deleteImage(copiedImagePath);
-    }
-    const message = error instanceof Error ? error.message : "Failed to share recipe";
-    log.error({ err: serializeError(error) }, "Unexpected error during recipe share");
-    return { success: false, error: message };
-  }
+/**
+ * Import a recipe from plain text (manual import).
+ * Sends the text to the backend for Gemini extraction.
+ * Extra args (sourceUrl, imageFile) are accepted for backward compatibility
+ * but the backend handles them separately.
+ */
+export async function importRecipeFromText(
+  text: string,
+  _sourceUrl?: string,
+  _imageFile?: File | null
+): Promise<ImportResult> {
+  return apiImportRecipeFromText(text);
 }

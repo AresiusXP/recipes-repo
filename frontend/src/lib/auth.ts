@@ -1,11 +1,11 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import { prisma } from "@/lib/prisma";
-import { logger } from "@/lib/logger";
+import pino from "pino";
 
-const log = logger.child({ component: "auth" });
+const log = pino({ name: "auth" });
+
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 
 /**
  * Lightweight, serialisable description of a configured OAuth provider.
@@ -18,8 +18,7 @@ export interface ProviderInfo {
 
 /**
  * Returns the list of OAuth providers that are currently enabled based on
- * the available environment variables. Used by the login page and settings
- * to render only the providers that are actually configured.
+ * the available environment variables.
  */
 export function getConfiguredProviders(): ProviderInfo[] {
   const providers: ProviderInfo[] = [];
@@ -50,10 +49,6 @@ function getAllowedEmails(): Set<string> | null {
   );
 }
 
-/**
- * Build the list of enabled OAuth providers based on available env vars.
- * This allows deployments to configure only the providers they need.
- */
 function buildProviders() {
   const providers = [];
 
@@ -74,8 +69,6 @@ function buildProviders() {
       MicrosoftEntraID({
         clientId: process.env.MICROSOFT_ENTRA_ID_CLIENT_ID,
         clientSecret: process.env.MICROSOFT_ENTRA_ID_CLIENT_SECRET,
-        // "common" allows both personal (MSN/Outlook/Hotmail) and
-        // work/school Microsoft accounts. Override via env var if needed.
         issuer:
           process.env.MICROSOFT_ENTRA_ID_ISSUER ||
           "https://login.microsoftonline.com/common/v2.0",
@@ -86,9 +79,44 @@ function buildProviders() {
   return providers;
 }
 
+/**
+ * Notify the backend of a sign-in event.
+ * The backend handles: ban checks, lastLoginAt updates, allowlist enforcement.
+ * Returns { allowed: boolean, reason?: string }
+ */
+async function notifyBackendSignIn(
+  email: string,
+  name: string | null | undefined,
+  image: string | null | undefined
+): Promise<{ allowed: boolean; reason?: string }> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/auth/signin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.BACKEND_INTERNAL_SECRET
+          ? { "X-Internal-Secret": process.env.BACKEND_INTERNAL_SECRET }
+          : {}),
+      },
+      body: JSON.stringify({ email, name, image }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { allowed: false, reason: data.reason || "sign-in rejected by backend" };
+    }
+    return { allowed: true };
+  } catch (err) {
+    log.error({ err }, "Failed to notify backend of sign-in");
+    // Fail open: allow sign-in if backend is unreachable (avoids lockout during deploys)
+    return { allowed: true };
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
-  adapter: PrismaAdapter(prisma),
+  // JWT strategy — no database adapter in the frontend.
+  // The backend owns the database; the frontend only manages the session cookie.
+  session: { strategy: "jwt" },
   providers: buildProviders(),
   pages: {
     signIn: "/login",
@@ -101,71 +129,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false;
       }
 
-      // Existing users — check ban status before allowing sign-in
-      const existingUser = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, isBanned: true },
-      });
-      if (existingUser) {
-        if (existingUser.isBanned) {
-          log.warn({ userId: existingUser.id }, "Sign-in rejected: user is banned");
+      // Check local allowlist first (fast, no backend call needed)
+      const allowedEmails = getAllowedEmails();
+      if (allowedEmails && !allowedEmails.has(email)) {
+        log.warn("Sign-in rejected: email not on allowlist");
+        return "/login?error=RegistrationNotAllowed";
+      }
+
+      // Notify backend (ban check, lastLoginAt, user creation)
+      const result = await notifyBackendSignIn(email, user.name, user.image);
+      if (!result.allowed) {
+        if (result.reason?.includes("banned")) {
           return "/login?error=AccountBanned";
         }
-        // Update lastLoginAt on successful sign-in
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { lastLoginAt: new Date() },
-        });
-        log.info({ userId: existingUser.id }, "Existing user signed in");
-        return true;
+        return "/login?error=RegistrationNotAllowed";
       }
 
-      // New user — check the allowlist
-      const allowedEmails = getAllowedEmails();
-
-      // No allowlist configured → open registration
-      if (!allowedEmails) {
-        log.info("New user registered (open registration — no allowlist configured)");
-        return true;
-      }
-
-      // Email is on the allowlist → allow registration
-      if (allowedEmails.has(email)) {
-        log.info("New user registered (email matched allowlist)");
-        return true;
-      }
-
-      // Blocked — redirect to login with an error
-      log.warn("Sign-in rejected: email not on allowlist");
-      return "/login?error=RegistrationNotAllowed";
+      return true;
     },
-    async session({ session, user }) {
-      if (session.user) {
-        session.user.id = user.id;
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
       }
-      // Defense in depth: reject sessions for banned users even if they slipped through
-      if (user?.id) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { isBanned: true },
-        });
-        if (dbUser?.isBanned) {
-          // Returning null signals NextAuth to invalidate the session
-          return null as unknown as typeof session;
-        }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user && token.id) {
+        session.user.id = token.id as string;
       }
       return session;
-    },
-  },
-  events: {
-    async createUser({ user }) {
-      // Set lastLoginAt for brand-new users (their first sign-in creates the record)
-      if (user.id) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLoginAt: new Date() },
-        });
-      }
     },
   },
 });

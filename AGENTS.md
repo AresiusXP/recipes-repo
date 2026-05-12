@@ -6,7 +6,40 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # AGENTS.md — recipes-repo
 
+## Deployment Target
+
+This application runs in a **microk8s homelab** Kubernetes cluster. Always consider this when making decisions about:
+
+- **Configuration & secrets** — use Kubernetes-native patterns (e.g. `Secret`, `ConfigMap`) rather than assuming a managed cloud provider.
+- **Storage** — PostgreSQL data and media files rely on persistent volumes; avoid assumptions about ephemeral or cloud-managed storage.
+- **Networking** — ingress, service discovery, and TLS are handled by the cluster (e.g. via an ingress controller); do not assume a cloud load balancer.
+- **Images** — container images must be compatible with the cluster's architecture and pull policy; prefer explicit image tags over `latest`.
+- **Resource constraints** — a homelab has limited CPU/memory; avoid changes that significantly increase resource usage.
+- **Standalone build** — the `output: "standalone"` Next.js build is intentional and required for the Docker/Kubernetes deployment; do not remove it.
+
+## Monorepo Structure
+
+The repository is split into three independent services plus an E2E test suite:
+
+```
+recipes-repo/
+├── frontend/     # Next.js app (UI + NextAuth only, ~256Mi)
+├── backend/      # Go REST API (business logic, DB, Gemini AI, ~256Mi)
+├── scraper/      # Node.js scraper microservice (Playwright + Cheerio, ~512Mi)
+├── e2e/          # Playwright end-to-end tests (manually triggered in CI)
+├── helm/
+│   ├── recipes-frontend/   # Helm chart for the frontend
+│   ├── recipes-backend/    # Helm chart for the backend (includes media PVC)
+│   └── recipes-scraper/    # Helm chart for the scraper
+├── docker-compose.yml      # Spins up all services for E2E / local dev
+└── .github/workflows/      # Path-based CI + tag-based release + E2E workflows
+```
+
+**PostgreSQL** is deployed separately using the [CloudPirates Helm chart](https://github.com/CloudPirates-io/helm-charts/tree/main/charts/postgres). Do NOT use Bitnami charts.
+
 ## Commands
+
+### Frontend (`frontend/`)
 
 ```bash
 npm run dev          # Start Next.js dev server (http://localhost:3000)
@@ -16,92 +49,134 @@ npm run lint         # ESLint (core-web-vitals + typescript presets)
 npm run test         # Run unit tests once (Vitest)
 npm run test:watch   # Run tests in watch mode
 npm run test:ci      # Run tests with verbose reporter (CI)
-
-npm run db:generate  # Regenerate Prisma client
-npm run db:push      # Push schema to database without migrations (uses --accept-data-loss)
-npm run db:migrate   # Create and apply a Prisma migration
-npm run db:studio    # Open Prisma Studio GUI
 ```
 
-### Testing
-
-This repository uses **Vitest** for unit and integration testing. Configuration is in `vitest.config.ts`.
+### Backend (`backend/`)
 
 ```bash
-npm run test             # Run all tests once
-npm run test:watch       # Run tests in watch mode during development
-npm run test -- src/lib  # Run tests matching a path pattern
+go build ./...       # Build all packages
+go test ./...        # Run all tests
+go vet ./...         # Static analysis
 ```
 
-Test files live alongside the source files they test using the `*.test.ts` naming convention (e.g., `src/lib/scraper.test.ts` tests `src/lib/scraper.ts`).
+The backend uses **Prisma** only for migrations (run as a Kubernetes initContainer). The Go runtime uses `pgx/v5` directly via `sqlc`-generated queries.
 
-**What is tested:**
-- Server actions (`src/app/actions/recipes.ts`, `src/app/actions/user.ts`, `src/app/actions/notifications.ts`) — input validation, ownership checks, CRUD behavior, error handling
-- Utility modules (`src/lib/require-auth.ts`, `src/lib/scraper.ts`, `src/lib/image-storage.ts`) — auth guards, HTML parsing, file validation
-- API routes (`src/app/media/[filename]/route.ts`) — media serving
+```bash
+# From backend/
+npx prisma migrate dev   # Create a new migration (requires DATABASE_URL)
+npx prisma migrate deploy # Apply pending migrations (used in initContainer)
+```
 
-**What is mocked:**
-- Prisma client (`@/lib/prisma`)
-- Gemini AI functions (`@/lib/gemini`)
-- Global `fetch`
-- Filesystem operations (`fs/promises`)
-- Next.js helpers (`next/navigation`, `next/cache`)
+### Scraper (`scraper/`)
 
-Tests do **not** require a database, network access, or API keys. All external dependencies are mocked.
+```bash
+npm run build        # TypeScript compile
+npm run dev          # Run with ts-node-dev (hot reload)
+npm run test         # Run unit tests (Vitest)
+npm run lint         # ESLint
+```
 
-**Writing new tests:**
-- Use `vi.hoisted()` for mock variables referenced inside `vi.mock()` factories (Vitest hoists `vi.mock` calls above variable declarations)
-- Follow the existing pattern: mock external modules, import the module under test, assert behavior
-- Place test files next to the source file they cover
+### E2E Tests (`e2e/`)
+
+```bash
+# Triggered manually via GitHub Actions (workflow_dispatch)
+# Or locally:
+docker compose up -d
+npx playwright test
+docker compose down
+```
 
 ### Validating changes
 
-Use `npm run lint`, `npm run test`, and `npm run build` to verify correctness. The CI pipeline (`.github/workflows/ci.yml`) runs all three on every pull request and push to `main`.
+| Service | Commands |
+|---|---|
+| Frontend | `npm run lint && npm run test && npm run build` (run inside `frontend/`) |
+| Backend | `go vet ./... && go test ./... && go build ./...` (run inside `backend/`) |
+| Scraper | `npm run lint && npm run test && npm run build` (run inside `scraper/`) |
+
+The CI pipeline runs these automatically on path-filtered pushes/PRs.
 
 ## Tech Stack
 
+### Frontend
 - **Next.js 16** (App Router) with **React 19** and **TypeScript** (strict mode)
 - **Tailwind CSS 4** for styling
-- **Prisma ORM** with SQLite via `@prisma/adapter-libsql`
 - **NextAuth.js v5** (Google OAuth and Microsoft Entra ID — both optional, enabled via env vars)
-- **Google Gemini** for AI recipe extraction
+- No database access — all data fetched from the Go backend via `fetch()`
+
+### Backend
+- **Go** REST API with `net/http` (standard library)
+- **PostgreSQL** via `pgx/v5`
+- **Prisma** for schema management and migrations only (not used at runtime)
+- **Google Gemini** for AI recipe extraction and translation
+- Owns media file storage (PVC mounted at `MEDIA_DIR`)
+
+### Scraper
+- **Node.js / TypeScript** microservice
+- **Playwright** (Chromium) for JavaScript-rendered pages
+- **Cheerio** for HTML parsing
+- Async job queue (in-memory); jobs tracked in PostgreSQL by the backend
 
 ## Project Layout
+
+### Frontend (`frontend/src/`)
 
 ```
 src/
 ├── app/
-│   ├── actions/recipes.ts        # Server actions (recipe CRUD, translate, share)
-│   ├── actions/user.ts           # Server actions (user settings, profile image)
-│   ├── actions/notifications.ts  # Server actions (notifications CRUD)
-│   ├── actions/admin.ts          # Server actions (admin user management)
+│   ├── actions/recipes.ts        # Server actions — thin proxies to Go backend
+│   ├── actions/user.ts           # Server actions — thin proxies to Go backend
+│   ├── actions/notifications.ts  # Server actions — thin proxies to Go backend
+│   ├── actions/admin.ts          # Server actions — thin proxies to Go backend
 │   ├── actions/auth.ts           # Server action (sign-out)
-│   ├── api/auth/                 # NextAuth route handler (minimal)
+│   ├── api/auth/                 # NextAuth route handler
+│   ├── api/import-status/[jobId] # Proxy: polls backend for import job status
 │   ├── login/                    # Login page
 │   ├── recipes/                  # Recipe pages (list, detail, edit, new, favorites)
+│   ├── recipes/import/[jobId]/   # Async import status polling page
 │   ├── notifications/            # Notifications page
 │   ├── settings/                 # User settings page
 │   ├── admin/                    # Admin user management page
-│   ├── media/[filename]/         # Media-serving route for uploaded/downloaded images
 │   ├── globals.css               # Tailwind styles
 │   ├── layout.tsx                # Root layout
 │   └── page.tsx                  # Root redirect
-├── components/                   # React components (mix of server and client components)
-├── generated/prisma/             # Generated Prisma client (gitignored — never edit)
-└── lib/                          # Shared server utilities
-    ├── admin.ts                  # Admin auth guard and email helpers
-    ├── auth.ts                   # NextAuth configuration
-    ├── cook-this-week.ts         # "Cook This Week" date utilities
-    ├── gemini.ts                 # Gemini AI integration
+├── components/                   # React components (mix of server and client)
+│   └── ImportStatusPoller.tsx    # Polls /api/import-status/{jobId} for async imports
+└── lib/
+    ├── api-client.ts             # Typed fetch() wrappers for all backend endpoints
+    ├── admin.ts                  # Admin auth guard (isAdminEmail helper)
+    ├── auth.ts                   # NextAuth configuration (JWT strategy, no DB adapter)
+    ├── gemini.ts                 # Re-exports TargetLanguage type only (Gemini lives in backend)
     ├── image-constants.ts        # Shared image MIME type / size constraints
-    ├── image-storage.ts          # Image download/storage
-    ├── logger.ts                 # Pino logger singleton
-    ├── prisma.ts                 # Prisma client singleton
     ├── require-auth.ts           # Auth guard helper
-    ├── scraper.ts                # Web page scraper
     └── theme.ts                  # Theme helpers (client-side)
-prisma/
-└── schema.prisma                 # Database schema
+```
+
+### Backend (`backend/`)
+
+```
+backend/
+├── cmd/server/main.go            # Entry point, router setup
+├── internal/
+│   ├── db/                       # pgx connection pool
+│   ├── gemini/                   # Gemini AI client
+│   ├── handlers/                 # HTTP handlers (recipes, users, notifications, admin, media, auth)
+│   ├── middleware/               # JWT auth middleware
+│   ├── models/                   # Shared types
+│   └── scraper/                  # Scraper service client (calls scraper pod)
+├── prisma/schema.prisma          # Database schema (source of truth)
+├── scripts/migrate-sqlite-to-postgres/  # One-time SQLite → PostgreSQL migration
+├── Dockerfile
+└── go.mod / go.sum
+```
+
+### Scraper (`scraper/src/`)
+
+```
+src/
+├── server.ts     # HTTP server + job queue worker
+├── scraper.ts    # Playwright + Cheerio scraping logic
+└── queue.ts      # In-memory FIFO job queue
 ```
 
 ## Code Style
@@ -118,7 +193,7 @@ prisma/
 - Always use the `@/` path alias (mapped to `src/`). Never use relative paths like `../../lib/`.
 
 ```ts
-import { prisma } from "@/lib/prisma";
+import { backendFetch } from "@/lib/api-client";
 import { requireAuth } from "@/lib/require-auth";
 ```
 
@@ -149,15 +224,35 @@ import { requireAuth } from "@/lib/require-auth";
 
 ### Server Actions
 
-- All recipe CRUD operations are server actions in `src/app/actions/recipes.ts`.
+- Server actions in `src/app/actions/` are **thin proxies** — they call `backendFetch()` from `@/lib/api-client` and return the result.
+- They do **not** access the database, Gemini, or the filesystem directly.
 - Client components call server actions directly — do not create extra API routes unless truly necessary.
 - Inline `"use server"` in form actions is acceptable for simple cases (e.g., sign-out buttons).
+
+### API Client
+
+- `src/lib/api-client.ts` contains all typed `fetch()` wrappers for the Go backend.
+- `backendFetch<T>(path, options?)` handles auth token injection and JSON parsing.
+- All backend types (Recipe, UserSettings, AdminUser, etc.) are defined here.
 
 ### Authentication
 
 - Use `requireAuth()` from `@/lib/require-auth` for server-side auth gating.
 - It redirects to `/login` if unauthenticated and returns a session with a guaranteed `user.id`.
-- Always verify resource ownership before mutations (compare `userId`).
+- The session JWT is forwarded to the Go backend as `Authorization: Bearer <token>` on every API call.
+- The Go backend validates the JWT using the shared `AUTH_SECRET`.
+
+## Async Recipe Import
+
+Recipe imports from URLs are **asynchronous**:
+
+1. Frontend calls `POST /api/recipes/import` → backend returns `{ jobId, status: "pending" }` (HTTP 202).
+2. Frontend redirects to `/recipes/import/{jobId}`.
+3. `ImportStatusPoller` component polls `/api/import-status/{jobId}` every 2.5 seconds.
+4. Backend scrapes (via scraper pod), calls Gemini, creates the recipe, updates job status.
+5. On `done`, frontend redirects to the new recipe page. On `failed`, shows error + retry.
+
+Job status values: `pending` → `scraping` → `extracting` → `done` | `failed`.
 
 ## Translation System
 
@@ -169,53 +264,46 @@ Recipes support on-demand translation into **English**, **Dutch**, or **Spanish*
 - `null` means automatic translation is **off** — this is the default for all new users.
 - Controlled in Settings via a 4-option picker (Off / English / Dutch / Spanish).
 - When set, newly imported recipes are automatically extracted directly into that language by Gemini at import time.
-- Exposed as `autoTranslateLanguage: AutoTranslateLanguage` in `UserSettings` and `updateUserSettings()`.
 
 ### Per-recipe translation rules
 
-The translate button on the recipe detail page shows a dropdown with **English**, **Dutch**, **Spanish**, and (when translated) **Show original**.
-
 **URL-imported recipes** (`sourceUrl` is set):
-- The button is always visible.
-- Every translation (including revert to original) **re-scrapes** the original `sourceUrl` and re-extracts with Gemini using the chosen target language.
-- If the original link is unreachable, translation fails with an error — the user must accept the stored recipe as-is.
-- Translations can be applied repeatedly and freely (switch languages at any time).
+- The translate button is always visible.
+- Every translation re-scrapes the original `sourceUrl` and re-extracts with Gemini.
 
 **Manual-import recipes** (`sourceUrl` is null):
 - One translation is permitted, using the stored `rawContent` as source.
-- After one translation, only **Show original** remains available (reverts from `rawContent`).
+- After one translation, only **Show original** remains available.
 - `hasBeenTranslated = true` is set after the first translation and is never reset.
 
 ### Recipe model fields involved
 
 | Field | Purpose |
 |---|---|
-| `sourceLanguage` | Detected ISO 639-1 language of the original content (set at import, never changed) |
-| `translatedLanguage` | Current display language (`"en"`, `"nl"`, `"es"`), or `null` = showing original |
-| `hasBeenTranslated` | `true` once any translation has been applied; gates the one-time limit for manual imports |
-| `isTranslatedToEnglish` | Legacy boolean kept for backward compatibility; `true` when `translatedLanguage === "en"` or source is English |
-| `rawContent` | Original scraped/entered content (up to 50 000 chars); used as translation source for manual imports |
+| `sourceLanguage` | Detected ISO 639-1 language of the original content |
+| `translatedLanguage` | Current display language, or `null` = showing original |
+| `hasBeenTranslated` | `true` once any translation has been applied |
+| `isTranslatedToEnglish` | Legacy boolean; `true` when `translatedLanguage === "en"` or source is English |
+| `rawContent` | Original scraped/entered content (up to 50 000 chars) |
 
-### Gemini integration
+## Database
 
-- `extractRecipeWithGemini(content, url, { targetLanguage })` — extracts and optionally translates in one pass. `targetLanguage: null` keeps the original language.
-- `translateRecipeWithGemini(recipe, targetLanguage)` — standalone translation helper (kept for potential future use; not called during the normal translation flow).
-- `TargetLanguage = "en" | "nl" | "es"` is exported from `src/lib/gemini.ts`.
+- **PostgreSQL** — deployed via the [CloudPirates Helm chart](https://github.com/CloudPirates-io/helm-charts/tree/main/charts/postgres).
+- **Schema** is defined in `backend/prisma/schema.prisma`.
+- **Migrations** are applied by a Kubernetes initContainer running `prisma migrate deploy` before the backend pod starts.
+- **Runtime access** is via `pgx/v5` in Go — Prisma is not used at runtime.
+- `ingredients` and `steps` are stored as JSON strings (`JSON.stringify`/`JSON.parse`), not normalized tables.
 
-## Prisma
+### SQLite → PostgreSQL migration
 
-- **Client location:** Generated into `src/generated/prisma` — never hand-edit these files.
-- **Singleton pattern:** Import `prisma` from `@/lib/prisma`. Do not create new `PrismaClient` instances.
-- **SQLite + libSQL:** The database is file-based (single-replica only).
-- **Schema fields:** `ingredients` and `steps` are stored as JSON strings (`JSON.stringify`/`JSON.parse`), not normalized tables.
-- After changing `prisma/schema.prisma`, run `npm run db:generate` then `npm run db:push` (or `db:migrate`).
+A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres/`. See `README.md` for the safe cutover procedure.
 
 ## Error Handling
 
 - **Server actions** return `{ success: boolean; error?: string }` — do not throw errors to the client.
 - **Auth failures** redirect via `requireAuth()` (which calls `redirect("/login")`).
 - **Ownership failures** return a generic `"Recipe not found"` message — do not reveal authorization details.
-- **Utility functions** (e.g., `image-storage.ts`) catch errors, log with `console.error`, and return `null` or no-op rather than throwing.
+- **Backend errors** are logged server-side; the frontend receives a generic error message.
 - Pattern for error narrowing: `error instanceof Error ? error.message : "Fallback message"`.
 
 ## Styling
@@ -226,37 +314,52 @@ The translate button on the recipe detail page shows a dropdown with **English**
 
 ## Files You Should Not Edit
 
-- `src/generated/prisma/` — auto-generated by Prisma; gitignored
 - `.env*` (except `.env.example`) — secrets; gitignored
 - `*.db`, `*.db-journal` — database files; gitignored
 - `public/media/` — user-uploaded images; gitignored
-- `.next/` — Next.js build cache; gitignored
+- `frontend/.next/` — Next.js build cache; gitignored
+- `backend/internal/db/` — if using sqlc, these are generated; check before editing
 
 ## Build Configuration Cautions
 
-- `next.config.ts` uses `output: "standalone"` and externalizes Prisma/libsql packages and `playwright-core` via `serverExternalPackages`. Avoid changes that break standalone server builds.
+- `frontend/next.config.ts` uses `output: "standalone"`. Do not remove it.
 - A static **Content-Security-Policy** header is applied to all routes in `next.config.ts`. `unsafe-eval` is only added in development.
 - `experimental.serverActions.bodySizeLimit` is set to `"10mb"` to allow recipe image uploads.
-- `images.localPatterns` allows Next.js to serve images from `/media/**` (the local media directory).
-- ESLint config (`eslint.config.mjs`) uses the flat config format with `eslint-config-next` core-web-vitals and TypeScript presets. No custom stylistic rules are added.
+- ESLint config (`eslint.config.mjs`) uses the flat config format with `eslint-config-next` core-web-vitals and TypeScript presets.
 
 ## Environment Variables
 
-Required variables are documented in `.env.example`:
+### Frontend (`frontend/.env`)
 
 | Variable | Purpose |
 |---|---|
-| `AUTH_SECRET` | Session encryption secret |
+| `AUTH_SECRET` | Session encryption secret (shared with backend) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `MICROSOFT_ENTRA_ID_CLIENT_ID` | Microsoft Entra ID client ID (leave empty to disable) |
 | `MICROSOFT_ENTRA_ID_CLIENT_SECRET` | Microsoft Entra ID client secret |
-| `MICROSOFT_ENTRA_ID_ISSUER` | Microsoft issuer URL (default: `common` — personal + work accounts) |
+| `MICROSOFT_ENTRA_ID_ISSUER` | Microsoft issuer URL (default: `common`) |
+| `NEXTAUTH_URL` / `AUTH_URL` | App base URL for OAuth callbacks |
+| `BACKEND_URL` | Go backend service URL (e.g. `http://recipes-backend:8080`) |
+| `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations (empty = open) |
+| `ADMIN_EMAILS` | Comma-separated list of admin emails |
+
+### Backend (`backend/.env`)
+
+| Variable | Purpose |
+|---|---|
+| `AUTH_SECRET` | Shared with frontend — used to validate NextAuth JWTs |
+| `DATABASE_URL` | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`) |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
-| `DATABASE_URL` | SQLite database path (default in code: `file:./prisma/dev.db`; `.env.example` uses `file:./dev.db`) |
-| `NEXTAUTH_URL` | App base URL for OAuth callbacks |
-| `AUTH_URL` | Auth.js v5 app URL (same as `NEXTAUTH_URL`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
-| `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations (empty = open) |
-| `ADMIN_EMAILS` | Comma-separated list of admin emails (default: `aresiusxp@gmail.com`) |
+| `SCRAPER_URL` | Scraper service URL (e.g. `http://recipes-scraper:3001`) |
+| `ADMIN_EMAILS` | Comma-separated list of admin emails |
+| `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations |
+
+### Scraper (`scraper/.env`)
+
+| Variable | Purpose |
+|---|---|
+| `PORT` | HTTP server port (default: `3001`) |
+| `PLAYWRIGHT_EXECUTABLE_PATH` | Path to Chromium binary |

@@ -1,217 +1,146 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
-import { requireAuth } from "@/lib/require-auth";
-import { revalidatePath } from "next/cache";
-import { saveUploadedImage, deleteImage, isLocalMediaPath } from "@/lib/image-storage";
-import { logger, serializeError } from "@/lib/logger";
-import { cache } from "react";
+/**
+ * User server actions — thin proxies to the Go backend API.
+ */
 
-// ─── Types ───
+import {
+  getUserSettings as apiGetUserSettings,
+  updateUserSettings as apiUpdateUserSettings,
+  type UserSettings,
+} from "@/lib/api-client";
+import { revalidatePath } from "next/cache";
+
+export type { UserSettings } from "@/lib/api-client";
 
 export type AutoTranslateLanguage = "en" | "nl" | "es" | null;
 
-export interface UserSettings {
-  name: string | null;
-  image: string | null;
-  autoTranslateLanguage: AutoTranslateLanguage;
-  themePreference: string;
-}
-
 export interface LinkedAccount {
   provider: string;
+  providerAccountId: string;
 }
 
-// ─── Get user settings ───
+export async function getUserSettingsAction(): Promise<UserSettings> {
+  return apiGetUserSettings();
+}
 
-export const getUserSettings = cache(async (): Promise<UserSettings> => {
-  const session = await requireAuth();
+// Alias used by settings page
+export const getUserSettings = getUserSettingsAction;
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { name: true, image: true, autoTranslateLanguage: true, themePreference: true },
-  });
+export async function updateUserSettingsAction(
+  settings: Partial<UserSettings>
+): Promise<{ success: boolean; error?: string }> {
+  const result = await apiUpdateUserSettings(settings);
+  if (result.success) revalidatePath("/settings");
+  return result;
+}
 
-  return {
-    name: user?.name ?? null,
-    image: user?.image ?? null,
-    autoTranslateLanguage: (user?.autoTranslateLanguage ?? null) as AutoTranslateLanguage,
-    themePreference: user?.themePreference ?? "system",
-  };
-});
+// Alias used by SettingsForm component
+export const updateUserSettings = updateUserSettingsAction;
 
-// ─── Get linked OAuth accounts ───
-
-export const getLinkedAccounts = cache(async (): Promise<LinkedAccount[]> => {
-  const session = await requireAuth();
-
-  const accounts = await prisma.account.findMany({
-    where: { userId: session.user.id },
-    select: { provider: true },
-  });
-
-  return accounts.map((a) => ({ provider: a.provider }));
-});
-
-// ─── Get theme preference safely ───
-
-export const getThemePreference = cache(async (): Promise<string> => {
+/**
+ * Get the theme preference for the current user.
+ * Used by the root layout to set the initial theme.
+ */
+export async function getThemePreference(): Promise<string> {
   try {
-    const { auth } = await import("@/lib/auth");
-    const session = await auth();
-    if (!session?.user?.id) return "system";
-
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { themePreference: true },
-    });
-
-    return user?.themePreference ?? "system";
+    const settings = await apiGetUserSettings();
+    return settings.themePreference || "system";
   } catch {
     return "system";
   }
-});
+}
 
-// ─── Upload profile image ───
+/**
+ * Get linked OAuth accounts for the current user.
+ */
+export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
+  const { auth } = await import("@/lib/auth");
+  const { redirect } = await import("next/navigation");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = (session as NonNullable<typeof session>).user!.id;
 
+  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/users/me/accounts`, {
+      headers: { Authorization: `Bearer ${userId}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Upload a profile image.
+ * Sends the file as multipart/form-data to the backend.
+ */
 export async function uploadProfileImage(
   formData: FormData
-): Promise<{ success: boolean; error?: string; image?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "uploadProfileImage", userId: session.user.id });
+): Promise<{ success: boolean; imagePath?: string; error?: string }> {
+  const { auth } = await import("@/lib/auth");
+  const { redirect } = await import("next/navigation");
 
-  log.info("Profile image upload started");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = (session as NonNullable<typeof session>).user!.id;
+
+  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 
   try {
-    const file = formData.get("image");
-
-    if (!file || !(file instanceof File) || file.size === 0) {
-      log.warn("Profile image upload rejected: no file provided or empty file");
-      return { success: false, error: "No image file provided" };
-    }
-
-    log.debug({ fileSize: file.size, fileType: file.type }, "Saving uploaded profile image");
-
-    // Save the uploaded file
-    const newImagePath = await saveUploadedImage(file);
-
-    if (!newImagePath) {
-      log.warn({ fileSize: file.size, fileType: file.type }, "Profile image save failed: unsupported type or size limit exceeded");
-      return { success: false, error: "Failed to save image. Please use a JPEG, PNG, WebP, or GIF file under 10MB." };
-    }
-
-    // Get the current image to clean up if it's a local file
-    const currentUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { image: true },
+    const res = await fetch(`${BACKEND_URL}/api/users/me/avatar`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${userId}`,
+      },
+      body: formData,
     });
 
-    // Update the user record
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { image: newImagePath },
-    });
-
-    // Delete old local image if it exists
-    if (currentUser?.image && isLocalMediaPath(currentUser.image)) {
-      log.debug({ oldImagePath: currentUser.image }, "Deleting old local profile image");
-      await deleteImage(currentUser.image);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      return { success: false, error: err.error || "Upload failed" };
     }
 
-    log.info({ newImagePath }, "Profile image uploaded successfully");
-
-    revalidatePath("/", "layout");
-    return { success: true, image: newImagePath };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to upload profile image";
-    log.error({ err: serializeError(error) }, "Unexpected error during profile image upload");
-    return { success: false, error: message };
+    const data = await res.json();
+    revalidatePath("/settings");
+    return { success: true, imagePath: data.imagePath };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Upload failed",
+    };
   }
 }
 
-// ─── Remove profile image ───
-
+/**
+ * Remove the current user's profile image.
+ */
 export async function removeProfileImage(): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "removeProfileImage", userId: session.user.id });
+  const { auth } = await import("@/lib/auth");
+  const { redirect } = await import("next/navigation");
 
-  log.info("Profile image removal started");
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const userId = (session as NonNullable<typeof session>).user!.id;
+
+  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 
   try {
-    // Get the current image to clean up
-    const currentUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { image: true },
+    const res = await fetch(`${BACKEND_URL}/api/users/me/avatar`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${userId}` },
     });
-
-    // Update the user record to remove the image
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { image: null },
-    });
-
-    // Delete old local image if it exists
-    if (currentUser?.image && isLocalMediaPath(currentUser.image)) {
-      log.debug({ imagePath: currentUser.image }, "Deleting local profile image file");
-      await deleteImage(currentUser.image);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      return { success: false, error: err.error || "Failed to remove image" };
     }
-
-    log.info({ hadLocalImage: !!(currentUser?.image && isLocalMediaPath(currentUser.image)) }, "Profile image removed successfully");
-
-    revalidatePath("/", "layout");
+    revalidatePath("/settings");
     return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to remove profile image";
-    log.error({ err: serializeError(error) }, "Unexpected error during profile image removal");
-    return { success: false, error: message };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed to remove image" };
   }
 }
 
-// ─── Update user settings ───
-
-export async function updateUserSettings(
-  data: { name?: string; autoTranslateLanguage?: AutoTranslateLanguage; themePreference?: string }
-): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAuth();
-  const log = logger.child({ action: "updateUserSettings", userId: session.user.id });
-
-  log.info({ fields: Object.keys(data) }, "User settings update started");
-
-  try {
-    const updateData: Record<string, unknown> = {};
-
-    if (typeof data.name === "string") {
-      updateData.name = data.name.trim() || null;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(data, "autoTranslateLanguage")) {
-      const lang = data.autoTranslateLanguage;
-      if (lang === null || lang === "en" || lang === "nl" || lang === "es") {
-        updateData.autoTranslateLanguage = lang;
-      }
-    }
-
-    if (typeof data.themePreference === "string" && ["light", "dark", "system"].includes(data.themePreference)) {
-      updateData.themePreference = data.themePreference;
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      log.debug("No valid fields to update; skipping database write");
-      return { success: true };
-    }
-
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: updateData,
-    });
-
-    log.info({ updatedFields: Object.keys(updateData) }, "User settings updated successfully");
-
-    revalidatePath("/", "layout");
-    return { success: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update settings";
-    log.error({ err: serializeError(error) }, "Unexpected error during user settings update");
-    return { success: false, error: message };
-  }
-}
