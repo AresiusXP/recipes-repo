@@ -101,8 +101,8 @@ export function SettingsForm({
 
       const result = await uploadProfileImage(formData);
 
-      if (result.success && result.image) {
-        setCurrentImage(result.image);
+      if (result.success && result.imagePath) {
+        setCurrentImage(result.imagePath);
         setPreviewUrl(null);
         setAvatarMessage({ type: "success", text: "Profile picture updated" });
         // Reset file input

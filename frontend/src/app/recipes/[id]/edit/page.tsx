@@ -1,22 +1,18 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
+import { getRecipe } from "@/lib/api-client";
 import { RecipeEditForm } from "@/components/RecipeEditForm";
 
 export default async function EditRecipePage(props: { params: Promise<{ id: string }> }) {
   const session = await requireAuth();
   const { id } = await props.params;
 
-  const recipe = await prisma.recipe.findUnique({
-    where: { id },
-    include: {
-      tags: {
-        include: {
-          tag: true,
-        },
-      },
-    },
-  });
+  let recipe;
+  try {
+    recipe = await getRecipe(id);
+  } catch {
+    notFound();
+  }
 
   if (!recipe || recipe.userId !== session.user.id) {
     notFound();
@@ -25,9 +21,9 @@ export default async function EditRecipePage(props: { params: Promise<{ id: stri
   const initialData = {
     title: recipe.title,
     description: recipe.description || "",
-    ingredients: JSON.parse(recipe.ingredients) as string[],
-    steps: JSON.parse(recipe.steps) as string[],
-    tags: recipe.tags.map((rt: { tag: { name: string } }) => rt.tag.name),
+    ingredients: recipe.ingredients,
+    steps: recipe.steps,
+    tags: recipe.tags,
   };
 
   return (

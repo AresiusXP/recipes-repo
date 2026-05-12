@@ -8,7 +8,7 @@ interface AdminUsersTableProps {
   currentUserId: string;
 }
 
-function formatDate(date: Date | null | undefined): string {
+function formatDate(date: Date | string | null | undefined): string {
   if (!date) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",

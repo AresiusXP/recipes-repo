@@ -14,7 +14,7 @@ export default async function FavoritesPage({
 
   // Fetch initial data server-side — favorites only
   const [initialRecipes, initialTags] = await Promise.all([
-    searchRecipes(q, tagList, true),
+    searchRecipes({ q, tags: tagList, favorites: true }),
     getUserTags(),
   ]);
 

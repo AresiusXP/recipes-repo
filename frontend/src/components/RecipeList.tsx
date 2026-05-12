@@ -76,7 +76,7 @@ export function RecipeList({
   const loadRecipes = useCallback(async () => {
     setLoading(true);
     try {
-      const results = await searchRecipes(query, selectedTags, favoritesOnly, cookThisWeekOnly);
+      const results = await searchRecipes({ q: query, tags: selectedTags, favorites: favoritesOnly, cookThisWeek: cookThisWeekOnly });
       setRecipes(results);
     } catch (err) {
       console.error("Failed to load recipes:", err);

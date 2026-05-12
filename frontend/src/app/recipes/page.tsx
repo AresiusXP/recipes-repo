@@ -15,7 +15,7 @@ export default async function RecipesPage({
 
   // Fetch initial data server-side to avoid loading flicker
   const [initialRecipes, initialTags] = await Promise.all([
-    searchRecipes(q, tagList, false, cookThisWeekOnly),
+    searchRecipes({ q, tags: tagList, cookThisWeek: cookThisWeekOnly }),
     getUserTags(),
   ]);
 

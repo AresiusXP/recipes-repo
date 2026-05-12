@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/require-auth";
+import { getRecipe } from "@/lib/api-client";
 import { DeleteRecipeButton } from "@/components/DeleteRecipeButton";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { CookThisWeekButton } from "@/components/CookThisWeekButton";
@@ -13,27 +13,20 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const session = await requireAuth();
   const { id } = await props.params;
 
-  const recipe = await prisma.recipe.findUnique({
-    where: { id },
-    include: {
-      tags: {
-        include: {
-          tag: true,
-        },
-      },
-      sharedBy: {
-        select: { name: true, email: true },
-      },
-    },
-  });
+  let recipe;
+  try {
+    recipe = await getRecipe(id);
+  } catch {
+    notFound();
+  }
 
   if (!recipe || recipe.userId !== session.user.id) {
     notFound();
   }
 
-  const ingredients: string[] = JSON.parse(recipe.ingredients);
-  const steps: string[] = JSON.parse(recipe.steps);
-  const tags = recipe.tags.map((rt: { tag: { name: string } }) => rt.tag.name);
+  const ingredients = recipe.ingredients;
+  const steps = recipe.steps;
+  const tags = recipe.tags;
 
   // Show translate button if:
   // - URL recipes: always (source can be re-scraped any time)
@@ -41,8 +34,6 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const hasSourceUrl = !!recipe.sourceUrl;
   const isManualImport = !hasSourceUrl;
   const showTranslateButton = hasSourceUrl || !recipe.hasBeenTranslated;
-
-  const sharedBy = recipe.sharedBy;
 
   return (
     <article className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10">
@@ -68,7 +59,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
             />
             <CookThisWeekButton
               recipeId={id}
-              initialCookThisWeekUntil={recipe.cookThisWeekUntil?.toISOString() ?? null}
+              initialCookThisWeekUntil={recipe.cookThisWeekUntil ?? null}
             />
             <ShareRecipeButton recipeId={id} />
             <Link
@@ -82,14 +73,6 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
         </div>
         {recipe.description && (
           <p className="text-zinc-600 dark:text-zinc-400">{recipe.description}</p>
-        )}
-        {sharedBy && (
-          <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
-            Shared by{" "}
-            <span className="font-medium text-zinc-600 dark:text-zinc-300">
-              {sharedBy.name ?? sharedBy.email ?? "a user"}
-            </span>
-          </p>
         )}
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
