@@ -1,8 +1,13 @@
-# Chart-only release workflow.
-# Triggered on tags matching helm-v* (e.g. helm-v1.2.3).
-# Use this when only Helm templates or values change (no service image rebuild needed).
-# Packages and pushes the unified helm/recipes chart to GHCR at the exact version
-# specified in the tag — no automatic patch bump (caller sets the version explicitly).
+# Chart release workflow — the single source of truth for packaging and pushing
+# the Helm chart to GHCR OCI.
+#
+# Triggered by helm-v* tags in two scenarios:
+#   1. Automatically by service release workflows (frontend-v*, backend-v*, scraper-v*)
+#      after they bump the chart version and image tag in main.
+#   2. Manually when only Helm templates or values change (no service image rebuild needed).
+#
+# In both cases this workflow reads Chart.yaml from main, sets the version to the
+# tag version, commits it back, packages the chart, and pushes it to GHCR.
 
 name: Release - Helm chart
 

@@ -113,8 +113,7 @@ Each service is versioned independently. Pushing a tag triggers the correspondin
 - **Use semantic versioning** (`MAJOR.MINOR.PATCH`). Increment PATCH for bug fixes, MINOR for new features, MAJOR for breaking changes.
 - **Never use `latest` as an image tag** — always use the explicit version from the tag.
 - **Service tags are independent** — `frontend-v1.3.0` and `backend-v2.1.0` can coexist; they do not need to match.
-- **The Helm chart version is managed automatically** by the service release workflows (patch-bumped on every service release). Only push a `helm-v*` tag manually when you need to release a chart change that has no associated service image change.
-- **When pushing a `helm-v*` tag**, first manually bump `version` in `helm/recipes/Chart.yaml` to match the tag, commit, then push the tag. The tag version and `Chart.yaml` version must match.
+- **The Helm chart version is managed automatically** by the service release workflows (patch-bumped on every service release). Each service release also auto-creates a `helm-v<new_chart_version>` git tag so every chart artifact in GHCR is traceable to an exact commit. Only push a `helm-v*` tag manually when you need to release a chart change that has no associated service image change — and make sure the version is higher than the current `Chart.yaml` version to avoid conflicts.
 - **Do not push multiple service tags simultaneously** unless you intend them to queue — the release workflows share a `concurrency: group: helm-release` lock and will run sequentially.
 
 ### Workflow files

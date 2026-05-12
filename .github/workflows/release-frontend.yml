@@ -1,7 +1,8 @@
 # Release workflow for the frontend service.
 # Triggered on tags matching frontend-v* (e.g. frontend-v1.2.3).
 # Builds and pushes the frontend container image to GHCR, then updates the
-# unified helm/recipes chart (image tag + patch version bump) and releases it.
+# unified helm/recipes chart (image tag + patch version bump) and creates a
+# helm-v* tag to trigger the chart release workflow.
 
 name: Release - Frontend
 
@@ -64,11 +65,7 @@ jobs:
           cache-from: type=registry,ref=${{ steps.registry.outputs.image }}:cache
           cache-to: type=registry,ref=${{ steps.registry.outputs.image }}:cache,mode=max
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-
-      - name: Update chart — image tag and bump chart version
-        id: chart
+      - name: Update chart image tag, bump chart version, and tag release
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -76,6 +73,21 @@ jobs:
           git checkout -f main
 
           VERSION="${{ steps.version.outputs.version }}"
+          CURRENT_IMAGE_TAG=$(yq '.frontend.image.tag' "${{ env.CHART_PATH }}/values.yaml")
+
+          # Skip if this image tag is already recorded (idempotent retry safety)
+          if [ "${CURRENT_IMAGE_TAG}" = "${VERSION}" ]; then
+            echo "Image tag already set to ${VERSION}, checking for existing helm tag..."
+            CURRENT_CHART=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
+            if git ls-remote --tags origin "refs/tags/helm-v${CURRENT_CHART}" | grep -q .; then
+              echo "helm-v${CURRENT_CHART} already exists on remote, nothing to do."
+              exit 0
+            fi
+            # Tag exists in chart but not yet pushed — push the tag to trigger chart release
+            git tag "helm-v${CURRENT_CHART}" || true
+            git push origin "helm-v${CURRENT_CHART}"
+            exit 0
+          fi
 
           # Update the frontend image tag in values.yaml
           yq -i ".frontend.image.tag = \"${VERSION}\"" "${{ env.CHART_PATH }}/values.yaml"
@@ -84,26 +96,15 @@ jobs:
           CURRENT_CHART=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
           NEW_CHART=$(echo "${CURRENT_CHART}" | awk -F. '{printf "%s.%s.%s", $1, $2, $3+1}')
           yq -i ".version = \"${NEW_CHART}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          echo "chart_version=${NEW_CHART}" >> "$GITHUB_OUTPUT"
 
           node scripts/update-changelog.mjs "frontend-v${VERSION}"
 
           git add "${{ env.CHART_PATH }}/values.yaml" "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "chore(helm): bump frontend image to ${VERSION}, chart to ${NEW_CHART} [skip ci]"
           git pull --rebase origin main
           git push origin main
 
-      - name: Package and push Helm chart
-        run: |
-          # Re-checkout main and pull to get the committed Chart.yaml with the bumped version.
-          # Re-read the version from Chart.yaml rather than using the step output to avoid
-          # stale version if another release committed a further bump before this step ran.
-          git checkout -f main
-          git pull origin main
-          CHART_VERSION=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
-          helm package "${{ env.CHART_PATH }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
-            --username "${{ github.actor }}" --password-stdin
-          helm push "recipes-${CHART_VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts"
+          # Create and push the helm-v* tag — this triggers release-helm.yml to package
+          # and push the chart to GHCR, keeping chart packaging logic in one place.
+          git tag "helm-v${NEW_CHART}"
+          git push origin "helm-v${NEW_CHART}"
