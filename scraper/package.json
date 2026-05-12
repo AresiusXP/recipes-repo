@@ -1,0 +1,33 @@
+{
+  "name": "recipes-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Async web scraper microservice for recipes-repo",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ci": "vitest run --reporter=verbose"
+  },
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^4.21.2",
+    "playwright-core": "^1.59.1",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.0.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9",
+    "tsx": "^4.19.3",
+    "typescript": "^5",
+    "vitest": "^4.1.4"
+  }
+}
