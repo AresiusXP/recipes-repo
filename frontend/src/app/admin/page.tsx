@@ -44,7 +44,7 @@ export default async function AdminPage() {
       {/* Users table */}
       <div>
         <h2 className="mb-4 text-base font-semibold text-zinc-900 dark:text-zinc-50">Users</h2>
-        <AdminUsersTable users={users} currentUserId={session.user.id} />
+        <AdminUsersTable users={users} currentUserId={session.user?.id ?? ""} />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 {
-  "name": "recipes-repo",
+  "name": "recipes-frontend",
   "version": "0.7.7",
   "private": true,
   "scripts": {
@@ -9,12 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ci": "vitest run --reporter=verbose",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push --accept-data-loss",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio",
-    "postinstall": "prisma generate"
+    "test:ci": "vitest run --reporter=verbose"
   },
   "overrides": {
     "next-auth": {
@@ -22,22 +17,11 @@
     }
   },
   "dependencies": {
-    "@auth/prisma-adapter": "^2.11.1",
-    "@google/generative-ai": "^0.24.1",
-    "@libsql/client": "^0.17.2",
-    "@prisma/adapter-libsql": "^7.7.0",
-    "@prisma/client": "^7.7.0",
-    "cheerio": "^1.2.0",
-    "dotenv": "^17.4.1",
     "next": "16.2.3",
     "next-auth": "^5.0.0-beta.30",
     "pino": "^10.3.1",
-    "playwright-core": "^1.59.1",
-    "prisma": "^7.7.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "sharp": "^0.34.5",
-    "uuid": "^13.0.0"
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

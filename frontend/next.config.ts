@@ -29,15 +29,6 @@ const cspHeader = `
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["@prisma/client", "prisma", "@prisma/adapter-libsql", "@libsql/client", "playwright-core"],
-  images: {
-    // Allow Next.js to serve locally downloaded images from /media/
-    localPatterns: [
-      {
-        pathname: "/media/**",
-      },
-    ],
-  },
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
