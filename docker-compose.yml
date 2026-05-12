@@ -1,31 +1,126 @@
+version: "3.9"
+
+# ─── E2E / local development docker-compose ───────────────────────────────────
+#
+# Spins up all services for end-to-end testing or local development.
+# Used by the GitHub Actions E2E workflow.
+#
+# Usage:
+#   docker compose build
+#   docker compose up -d postgres backend scraper frontend
+#   docker compose run --rm e2e
+#   docker compose down
+
 services:
-  app:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: recipes
+      POSTGRES_PASSWORD: recipes_test_password
+      POSTGRES_DB: recipes
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recipes -d recipes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ── Backend ──────────────────────────────────────────────────────────────────
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://recipes:recipes_test_password@postgres:5432/recipes
+      AUTH_SECRET: e2e-test-auth-secret-do-not-use-in-production
+      BACKEND_INTERNAL_SECRET: e2e-internal-secret
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-test-key}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      SCRAPER_URL: http://scraper:3001
+      MEDIA_DIR: /media
+      PORT: "8080"
+      LOG_LEVEL: info
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - media_data:/media
+
+  # ── Scraper ──────────────────────────────────────────────────────────────────
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    environment:
+      PORT: "3001"
+      LOG_LEVEL: info
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_URL: http://backend:8080
+      BACKEND_INTERNAL_SECRET: e2e-internal-secret
+      AUTH_SECRET: e2e-test-auth-secret-do-not-use-in-production
+      NEXTAUTH_URL: http://localhost:3000
+      AUTH_URL: http://localhost:3000
+      # OAuth providers are optional — leave empty to disable in E2E
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      NODE_ENV: production
+      PORT: "3000"
     ports:
       - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── E2E test runner ───────────────────────────────────────────────────────────
+  e2e:
+    build:
+      context: ./e2e
+      dockerfile: Dockerfile
     environment:
-      - DATABASE_URL=file:/app/data/recipes.db
-      - MEDIA_DIR=public/media
-      - AUTH_SECRET=${AUTH_SECRET:-change-me-to-a-random-secret}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - MICROSOFT_ENTRA_ID_CLIENT_ID=${MICROSOFT_ENTRA_ID_CLIENT_ID}
-      - MICROSOFT_ENTRA_ID_CLIENT_SECRET=${MICROSOFT_ENTRA_ID_CLIENT_SECRET}
-      - MICROSOFT_ENTRA_ID_ISSUER=${MICROSOFT_ENTRA_ID_ISSUER:-https://login.microsoftonline.com/common/v2.0}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
-      - AUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
-      - AUTH_TRUST_HOST=true
+      BASE_URL: http://frontend:3000
+      BACKEND_URL: http://backend:8080
+      BACKEND_INTERNAL_SECRET: e2e-internal-secret
+      E2E_TEST_USER_EMAIL: e2e-test@recipes.local
+      # Optional: provide a real recipe URL for import tests
+      E2E_TEST_RECIPE_URL: ${E2E_TEST_RECIPE_URL:-}
+    depends_on:
+      frontend:
+        condition: service_healthy
     volumes:
-      - recipes-data:/app/data
-      - recipes-media:/app/public/media
-    restart: unless-stopped
+      - ./e2e/playwright-report:/app/playwright-report
+      - ./e2e/test-results:/app/test-results
+    profiles:
+      - e2e # only started when explicitly requested
 
 volumes:
-  recipes-data:
-    driver: local
-  recipes-media:
-    driver: local
+  postgres_data:
+  media_data:

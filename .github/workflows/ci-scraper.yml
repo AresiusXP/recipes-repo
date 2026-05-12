@@ -1,20 +1,28 @@
-# Runs lint, test, and build on every pull request and push to main.
+# CI for the scraper service (Node.js/TypeScript).
+# Triggered only when files under scraper/ change.
 
-name: CI
+name: CI — Scraper
 
 on:
   push:
     branches: [main]
+    paths:
+      - "scraper/**"
   pull_request:
     branches: [main]
+    paths:
+      - "scraper/**"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-scraper-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   ci:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scraper
 
     steps:
       - name: Checkout repository
@@ -25,22 +33,16 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: scraper/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint --if-present
 
       - name: Test
         run: npm run test:ci
 
-      - name: Build
+      - name: TypeScript build
         run: npm run build
-        env:
-          # Provide dummy values so the build succeeds without real secrets
-          AUTH_SECRET: ci-placeholder
-          GOOGLE_CLIENT_ID: ci-placeholder
-          GOOGLE_CLIENT_SECRET: ci-placeholder
-          GEMINI_API_KEY: ci-placeholder
-          DATABASE_URL: file:./ci.db

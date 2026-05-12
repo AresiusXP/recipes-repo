@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "recipes-frontend.name" -}}
+{{- define "recipes-backend.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "recipes-frontend.fullname" -}}
+{{- define "recipes-backend.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -22,18 +22,11 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
-Create chart name and version as used by the chart label.
-*/}}
-{{- define "recipes-frontend.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-{{- end }}
-
-{{/*
 Common labels
 */}}
-{{- define "recipes-frontend.labels" -}}
-helm.sh/chart: {{ include "recipes-frontend.chart" . }}
-{{ include "recipes-frontend.selectorLabels" . }}
+{{- define "recipes-backend.labels" -}}
+helm.sh/chart: {{ include "recipes-backend.name" . }}-{{ .Chart.Version | replace "+" "_" }}
+{{ include "recipes-backend.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,7 +36,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "recipes-frontend.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "recipes-frontend.name" . }}
+{{- define "recipes-backend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "recipes-backend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

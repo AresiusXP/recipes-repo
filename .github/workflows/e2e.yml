@@ -1,0 +1,87 @@
+# End-to-end test workflow.
+# Manually triggered only (workflow_dispatch).
+# Spins up all services via docker-compose and runs Playwright tests.
+
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        default: "docker-compose"
+        type: choice
+        options:
+          - docker-compose
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR (for layer caching)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true # don't fail if not authenticated
+
+      - name: Build all service images
+        run: docker compose build
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test-key' }}
+
+      - name: Start services (postgres, backend, scraper, frontend)
+        run: docker compose up -d postgres backend scraper frontend
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test-key' }}
+
+      - name: Wait for frontend to be healthy
+        run: |
+          echo "Waiting for frontend to be ready..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+              echo "Frontend is ready!"
+              break
+            fi
+            echo "Attempt $i/60 — waiting..."
+            sleep 3
+          done
+
+      - name: Run E2E tests
+        run: docker compose run --rm e2e
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test-key' }}
+          E2E_TEST_RECIPE_URL: ${{ vars.E2E_TEST_RECIPE_URL || '' }}
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 30
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: e2e/test-results/
+          retention-days: 7
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v

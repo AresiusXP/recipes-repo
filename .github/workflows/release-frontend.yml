@@ -1,17 +1,17 @@
-# Triggered on app release tags (v1.2.3).
-# Builds and pushes the container image to GHCR, then updates the Helm chart
-# (both version and appVersion) and publishes it as an OCI artifact.
+# Release workflow for the frontend.
+# Triggered on tags matching frontend-v* (e.g. frontend-v1.2.3).
+# Builds and pushes the container image to GHCR, then packages and pushes the Helm chart.
 
-name: Release
+name: Release — Frontend
 
 on:
   push:
     tags:
-      - "v*"
+      - "frontend-v*"
 
 env:
   REGISTRY: ghcr.io
-  CHART_PATH: helm/recipes-repo
+  CHART_PATH: helm/recipes-frontend
 
 permissions:
   contents: write
@@ -22,29 +22,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── Checkout the tagged commit ───────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      # ── Derive version from tag ──────────────────────────────
       - name: Extract version from tag
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME#frontend-v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      # ── Normalise names to lowercase (GHCR requirement) ────
       - name: Lowercase registry paths
         id: registry
-        shell: bash
         run: |
-          echo "image_name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/recipes-frontend" >> "$GITHUB_OUTPUT"
 
-      # ── Container image ──────────────────────────────────────
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -55,23 +50,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push container image
+      - name: Build and push frontend image
         uses: docker/build-push-action@v6
         with:
-          context: .
-          target: runner
+          context: ./frontend
           push: true
-          tags: ${{ env.REGISTRY }}/${{ steps.registry.outputs.image_name }}:${{ steps.version.outputs.version }}
+          tags: ${{ steps.registry.outputs.image }}:${{ steps.version.outputs.version }}
+          cache-from: type=registry,ref=${{ steps.registry.outputs.image }}:cache
+          cache-to: type=registry,ref=${{ steps.registry.outputs.image }}:cache,mode=max
 
-      - name: Build and push migrator image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: migrator
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ steps.registry.outputs.image_name }}-migrator:${{ steps.version.outputs.version }}
-
-      # ── Helm chart ───────────────────────────────────────────
       - name: Install Helm
         uses: azure/setup-helm@v4
 
@@ -80,21 +67,16 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
           yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          echo "Updated Chart.yaml:"
-          cat "${{ env.CHART_PATH }}/Chart.yaml"
 
-      - name: Package Helm chart
-        run: helm package "${{ env.CHART_PATH }}"
-
-      - name: Push Helm chart to GHCR
+      - name: Package and push Helm chart
         run: |
+          helm package "${{ env.CHART_PATH }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
             --username "${{ github.actor }}" --password-stdin
-          helm push recipes-repo-${{ steps.version.outputs.version }}.tgz \
+          helm push recipes-frontend-${{ steps.version.outputs.version }}.tgz \
             oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
 
-      # ── Commit version bump + changelog back to main ─────────
-      - name: Commit Chart.yaml and CHANGELOG.md changes to main
+      - name: Commit Chart.yaml and CHANGELOG.md to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -103,9 +85,9 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
           yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          node scripts/update-changelog.mjs "v${VERSION}"
+          node scripts/update-changelog.mjs "frontend-v${VERSION}"
           git add "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: bump chart and update changelog for v${{ steps.version.outputs.version }} [skip ci]"
+          git commit -m "chore: bump frontend chart and update changelog for v${VERSION} [skip ci]"
           git pull --rebase origin main
           git push origin main

@@ -1,9 +1,9 @@
-# Default values for recipes-repo
+# Default values for recipes-frontend
 
 replicaCount: 1
 
 image:
-  repository: ghcr.io/aresiusxp/recipes-repo
+  repository: ghcr.io/aresiusxp/recipes-frontend
   pullPolicy: IfNotPresent
   # Defaults to Chart.appVersion when left empty
   tag: ""
@@ -11,14 +11,6 @@ image:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-
-# Database schema migrator (runs as an initContainer before the app starts)
-migrator:
-  image:
-    repository: ghcr.io/aresiusxp/recipes-repo-migrator
-    pullPolicy: IfNotPresent
-    # Defaults to Chart.appVersion when left empty
-    tag: ""
 
 # Application environment configuration
 config:
@@ -31,46 +23,33 @@ config:
   # Sets both NEXTAUTH_URL and AUTH_URL for Auth.js v5 compatibility.
   # AUTH_TRUST_HOST is always set to "true" to support reverse-proxy deployments.
   nextauthUrl: "https://recipes.example.com"
-  # Directory for recipe images inside the container
-  mediaDir: "media"
-  # SQLite database path inside the container
-  databaseUrl: "file:/app/data/recipes.db"
-  # Gemini model to use for recipe extraction
-  geminiModel: "gemini-2.0-flash"
-  # Path to the Chromium binary used by the Playwright browser fallback.
-  # The production image (Debian bookworm) installs Chromium via apt and sets
-  # this automatically. Override only if you use a custom image or a non-standard
-  # Chromium location (e.g. "/usr/bin/chromium-browser" on some distros).
-  # Leave empty to use the image default (/usr/bin/chromium).
-  playwrightExecutablePath: ""
+  # URL of the backend API service (internal Kubernetes ClusterIP service)
+  backendUrl: "http://recipes-backend:8080"
   # Structured log level emitted to stdout (trace | debug | info | warn | error | fatal)
-  # Loki scrapes container stdout; use "info" in production, "debug" for troubleshooting.
   logLevel: "info"
   # Application name embedded in every log line (useful for multi-app Loki setups)
-  appName: "recipes-repo"
+  appName: "recipes-frontend"
   # Microsoft Entra ID issuer — controls which Microsoft accounts may log in.
   # Defaults to "common" (personal + work/school) when left empty.
   microsoftEntraIdIssuer: "https://login.microsoftonline.com/common/v2.0"
 
 # Secret references — these must exist in the cluster
 # Create them with:
-#   kubectl create secret generic recipes-repo-secrets \
+#   kubectl create secret generic recipes-frontend-secrets \
 #     --from-literal=auth-secret='<random-secret>' \
 #     --from-literal=google-client-id='<your-id>' \
-#     --from-literal=google-client-secret='<your-secret>' \
-#     --from-literal=gemini-api-key='<your-key>'
+#     --from-literal=google-client-secret='<your-secret>'
 #
 # To also enable Microsoft login, add:
 #     --from-literal=microsoft-entra-id-client-id='<your-entra-client-id>' \
 #     --from-literal=microsoft-entra-id-client-secret='<your-entra-client-secret>'
 secrets:
   # Name of the Kubernetes Secret containing app credentials
-  existingSecret: "recipes-repo-secrets"
+  existingSecret: "recipes-frontend-secrets"
   keys:
     authSecret: "auth-secret"
     googleClientId: "google-client-id"
     googleClientSecret: "google-client-secret"
-    geminiApiKey: "gemini-api-key"
     # Set these to enable Microsoft Entra ID (Azure AD) login.
     # Leave empty ("") to disable Microsoft login entirely.
     microsoftEntraIdClientId: ""
@@ -102,33 +81,13 @@ ingress:
   #    hosts:
   #      - recipes.example.com
 
-# Persistent storage for SQLite database and recipe images
-persistence:
-  data:
-    enabled: true
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 1Gi
-    # existingClaim: ""
-  media:
-    enabled: true
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-    size: 5Gi
-    # existingClaim: ""
-
 resources:
   limits:
     cpu: 500m
-    # Chromium (used by the browser fallback scraper) requires more memory than
-    # a typical Node.js app. 768Mi is the recommended minimum; raise to 1Gi if
-    # you frequently scrape login-walled sites.
-    memory: 768Mi
+    memory: 256Mi
   requests:
     cpu: 100m
-    memory: 256Mi
+    memory: 128Mi
 
 nodeSelector: {}
 
