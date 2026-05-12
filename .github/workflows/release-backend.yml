@@ -3,7 +3,7 @@
 # Builds and pushes the backend container image to GHCR, then updates the
 # unified helm/recipes chart (image tag + patch version bump) and releases it.
 
-name: Release — Backend
+name: Release - Backend
 
 on:
   push:

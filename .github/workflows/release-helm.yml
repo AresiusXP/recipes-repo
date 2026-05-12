@@ -4,7 +4,7 @@
 # Packages and pushes the unified helm/recipes chart to GHCR at the exact version
 # specified in the tag — no automatic patch bump (caller sets the version explicitly).
 
-name: Release — Helm chart
+name: Release - Helm chart
 
 on:
   push:
