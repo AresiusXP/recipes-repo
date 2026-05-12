@@ -1,0 +1,14 @@
+{
+  "name": "migrate-sqlite-to-postgres",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-time migration script from SQLite to PostgreSQL",
+  "scripts": {
+    "migrate": "node migrate.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.6.0",
+    "pg": "^8.13.0"
+  }
+}
