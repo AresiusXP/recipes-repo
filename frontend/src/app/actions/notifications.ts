@@ -8,6 +8,7 @@ import {
   getNotifications as apiGetNotifications,
   markNotificationRead as apiMarkNotificationRead,
   deleteNotification as apiDeleteNotification,
+  markAllNotificationsRead as apiMarkAllNotificationsRead,
   type AppNotification,
 } from "@/lib/api-client";
 import { revalidatePath } from "next/cache";
@@ -50,27 +51,9 @@ export const dismissNotification = deleteNotificationAction;
  * Mark all notifications as read for the current user.
  */
 export async function markAllNotificationsRead(): Promise<{ success: boolean; error?: string }> {
-  const { auth } = await import("@/lib/auth");
-  const { redirect } = await import("next/navigation");
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-  const userId = (session as NonNullable<typeof session>).user!.id;
-
-  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/notifications/read-all`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${userId}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      return { success: false, error: err.error || "Failed" };
-    }
-    revalidatePath("/notifications");
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "Failed" };
-  }
+  const result = await apiMarkAllNotificationsRead();
+  if (result.success) revalidatePath("/notifications");
+  return result;
 }
 
 /**

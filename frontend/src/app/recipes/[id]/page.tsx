@@ -95,7 +95,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
               rel="noopener noreferrer"
               className="underline hover:text-zinc-600 dark:hover:text-zinc-300"
             >
-              {new URL(recipe.sourceUrl).hostname}
+              {(() => { try { return new URL(recipe.sourceUrl).hostname; } catch { return recipe.sourceUrl; } })()}
             </a>
           </p>
         )}

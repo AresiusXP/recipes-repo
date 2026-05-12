@@ -107,6 +107,7 @@ func main() {
 
 		// Notifications
 		r.Get("/api/notifications", notifHandler.List)
+		r.Post("/api/notifications/read-all", notifHandler.MarkAllRead)
 		r.Post("/api/notifications/{id}/read", notifHandler.MarkRead)
 		r.Delete("/api/notifications/{id}", notifHandler.Delete)
 

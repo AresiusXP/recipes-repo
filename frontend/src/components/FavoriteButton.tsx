@@ -26,10 +26,14 @@ export function FavoriteButton({
     e.stopPropagation();
 
     startTransition(async () => {
-      const result = await toggleFavorite(recipeId);
-      if (result.success && result.isFavorite !== undefined) {
-        setIsFavorite(result.isFavorite);
-        onToggled?.(result.isFavorite);
+      try {
+        const result = await toggleFavorite(recipeId);
+        if (result.success && result.isFavorite !== undefined) {
+          setIsFavorite(result.isFavorite);
+          onToggled?.(result.isFavorite);
+        }
+      } catch (err) {
+        console.error("toggleFavorite failed", err);
       }
     });
   }

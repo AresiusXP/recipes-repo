@@ -410,6 +410,15 @@ export async function deleteNotification(
   }
 }
 
+export async function markAllNotificationsRead(): Promise<{ success: boolean; error?: string }> {
+  try {
+    await backendFetch("/api/notifications/read-all", { method: "POST" });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed to mark all as read" };
+  }
+}
+
 // ─── Admin API ────────────────────────────────────────────────────────────────
 
 export async function getAdminUsers(): Promise<AdminUser[]> {

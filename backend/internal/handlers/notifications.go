@@ -52,6 +52,21 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, notifications)
 }
 
+// MarkAllRead marks all notifications as read for the current user.
+func (h *NotificationHandler) MarkAllRead(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r)
+
+	if _, err := h.db.Exec(r.Context(), `
+		UPDATE "Notification" SET "isRead"=true WHERE "userId"=$1
+	`, userID); err != nil {
+		slog.Error("failed to mark all notifications as read", "error", err)
+		jsonError(w, "Failed to mark all notifications as read", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, models.SuccessResponse{Success: true})
+}
+
 // MarkRead marks a notification as read.
 func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r)
