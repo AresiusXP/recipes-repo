@@ -19,12 +19,12 @@ test.describe("Login page", () => {
 
   test("shows AccountBanned error when redirected with error param", async ({ page }) => {
     await page.goto("/login?error=AccountBanned");
-    await expect(page.locator("text=/banned/i")).toBeVisible();
+    await expect(page.locator("text=Account banned").first()).toBeVisible();
   });
 
   test("shows RegistrationNotAllowed error when redirected with error param", async ({ page }) => {
     await page.goto("/login?error=RegistrationNotAllowed");
-    await expect(page.locator("text=/not allowed|not permitted/i")).toBeVisible();
+    await expect(page.locator("text=Registration restricted")).toBeVisible();
   });
 
   test("redirects authenticated users away from login", async ({ page, context }) => {

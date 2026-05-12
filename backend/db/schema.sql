@@ -1,0 +1,85 @@
+-- ─── Database schema for Recipes app ─────────────────────────────────────────
+-- This file is used to initialise the database in Docker Compose / E2E.
+-- In production (Kubernetes) the initContainer runs `prisma migrate deploy`.
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ── User ─────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "User" (
+  id                    TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  email                 TEXT        NOT NULL UNIQUE,
+  name                  TEXT,
+  image                 TEXT,
+  "themePreference"     TEXT        NOT NULL DEFAULT 'system',
+  "autoTranslateLanguage" TEXT,
+  "isBanned"            BOOLEAN     NOT NULL DEFAULT false,
+  "createdAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "lastLoginAt"         TIMESTAMPTZ
+);
+
+-- ── Recipe ────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "Recipe" (
+  id                    TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  "userId"              TEXT        NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+  title                 TEXT        NOT NULL,
+  description           TEXT,
+  ingredients           TEXT        NOT NULL DEFAULT '[]',
+  steps                 TEXT        NOT NULL DEFAULT '[]',
+  "sourceUrl"           TEXT,
+  "imagePath"           TEXT,
+  "isFavorite"          BOOLEAN     NOT NULL DEFAULT false,
+  "cookThisWeekUntil"   TIMESTAMPTZ,
+  "shareToken"          TEXT        UNIQUE,
+  "rawContent"          TEXT,
+  "sourceLanguage"      TEXT,
+  "translatedLanguage"  TEXT,
+  "hasBeenTranslated"   BOOLEAN     NOT NULL DEFAULT false,
+  "isTranslatedToEnglish" BOOLEAN   NOT NULL DEFAULT false,
+  "prepTime"            TEXT,
+  "cookTime"            TEXT,
+  servings              TEXT,
+  "createdAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Tag ───────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "Tag" (
+  id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  name   TEXT NOT NULL UNIQUE
+);
+
+-- ── RecipeTag ─────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "RecipeTag" (
+  "recipeId" TEXT NOT NULL REFERENCES "Recipe"(id) ON DELETE CASCADE,
+  "tagId"    TEXT NOT NULL REFERENCES "Tag"(id)    ON DELETE CASCADE,
+  PRIMARY KEY ("recipeId", "tagId")
+);
+
+-- ── Notification ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "Notification" (
+  id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  "userId"    TEXT        NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+  type        TEXT        NOT NULL,
+  message     TEXT        NOT NULL,
+  "recipeId"  TEXT        REFERENCES "Recipe"(id) ON DELETE SET NULL,
+  "isRead"    BOOLEAN     NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── RecipeImportJob ───────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "RecipeImportJob" (
+  id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  "userId"    TEXT        NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+  url         TEXT        NOT NULL DEFAULT '',
+  status      TEXT        NOT NULL DEFAULT 'pending',
+  "recipeId"  TEXT        REFERENCES "Recipe"(id) ON DELETE SET NULL,
+  error       TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ── Indexes ───────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_recipe_userid    ON "Recipe"("userId");
+CREATE INDEX IF NOT EXISTS idx_notification_userid ON "Notification"("userId");
+CREATE INDEX IF NOT EXISTS idx_importjob_userid ON "RecipeImportJob"("userId");
+CREATE INDEX IF NOT EXISTS idx_importjob_status ON "RecipeImportJob"(status);

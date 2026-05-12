@@ -5,8 +5,6 @@ WORKDIR /app
 
 # Install dependencies
 COPY package.json package-lock.json ./
-COPY prisma ./prisma/
-COPY prisma.config.ts ./
 RUN npm ci
 
 # Copy source
@@ -15,8 +13,8 @@ COPY . .
 # Ensure public/ exists even when .dockerignore excludes all its contents
 RUN mkdir -p public
 
-# Generate Prisma client and build Next.js
-RUN npx prisma generate && npm run build
+# Build Next.js
+RUN npm run build
 
 # ─── Production stage ───
 FROM node:20-bookworm-slim AS runner
@@ -41,9 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
 COPY --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs --from=builder /app/public ./public
-
-# Copy generated Prisma client (needed at runtime by NextAuth's PrismaAdapter)
-COPY --chown=nextjs:nodejs --from=builder /app/src/generated ./src/generated
 
 # Copy entrypoint
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
