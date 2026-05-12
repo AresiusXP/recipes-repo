@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recipes.componentFullname" (dict "component" "scraper" "context" .) }}
+  labels:
+    {{- include "recipes.componentLabels" (dict "component" "scraper" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.scraper.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "recipes.componentSelectorLabels" (dict "component" "scraper" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.componentSelectorLabels" (dict "component" "scraper" "context" .) | nindent 8 }}
+    spec:
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: scraper
+          image: "{{ .Values.scraper.image.repository }}:{{ .Values.scraper.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.scraper.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3001
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.scraper.config.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.scraper.config.logLevel | quote }}
+            - name: PLAYWRIGHT_EXECUTABLE_PATH
+              value: {{ .Values.scraper.config.playwrightExecutablePath | quote }}
+          {{- with .Values.scraper.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.scraper.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.scraper.resources | nindent 12 }}
+      {{- with .Values.scraper.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scraper.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.scraper.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

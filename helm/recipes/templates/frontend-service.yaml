@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "recipes.componentFullname" (dict "component" "frontend" "context" .) }}
+  labels:
+    {{- include "recipes.componentLabels" (dict "component" "frontend" "context" .) | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "recipes.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 4 }}

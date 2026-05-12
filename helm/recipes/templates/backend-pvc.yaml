@@ -1,0 +1,17 @@
+{{- if and .Values.backend.mediaPvc.enabled (not .Values.backend.mediaPvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "recipes.componentFullname" (dict "component" "backend" "context" .) }}-media
+  labels:
+    {{- include "recipes.componentLabels" (dict "component" "backend" "context" .) | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.backend.mediaPvc.accessMode }}
+  {{- if .Values.backend.mediaPvc.storageClassName }}
+  storageClassName: {{ .Values.backend.mediaPvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.mediaPvc.size }}
+{{- end }}

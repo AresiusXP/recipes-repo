@@ -1,0 +1,231 @@
+# Default values for the unified recipes Helm chart.
+# All three services (frontend, backend, scraper) are deployed from this single chart.
+
+# Shared settings applied to all pods
+imagePullSecrets: []
+
+dnsConfig:
+  options:
+    - name: ndots
+      value: "1"
+
+# ─────────────────────────────────────────────
+# Frontend (Next.js)
+# ─────────────────────────────────────────────
+frontend:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/aresiusxp/recipes-frontend
+    pullPolicy: IfNotPresent
+    # Defaults to Chart.appVersion when left empty
+    tag: ""
+
+  config:
+    # Comma-separated list of email addresses allowed to register.
+    # Leave empty to allow anyone to register (open registration).
+    allowedEmails: ""
+    # Comma-separated list of admin email addresses.
+    adminEmails: ""
+    # Base URL for OAuth callbacks (must match your ingress hostname).
+    # Sets both NEXTAUTH_URL and AUTH_URL for Auth.js v5 compatibility.
+    # AUTH_TRUST_HOST is always set to "true" to support reverse-proxy deployments.
+    nextauthUrl: "https://recipes.example.com"
+    # URL of the backend API service (internal Kubernetes ClusterIP service)
+    backendUrl: "http://recipes-backend:8080"
+    logLevel: "info"
+    appName: "recipes-frontend"
+    # Microsoft Entra ID issuer — controls which Microsoft accounts may log in.
+    microsoftEntraIdIssuer: "https://login.microsoftonline.com/common/v2.0"
+
+  # Secret references — must exist in the cluster before deploying.
+  # Create with:
+  #   kubectl create secret generic recipes-frontend-secrets \
+  #     --from-literal=auth-secret='<random-secret>' \
+  #     --from-literal=google-client-id='<your-id>' \
+  #     --from-literal=google-client-secret='<your-secret>'
+  #
+  # To also enable Microsoft login, add:
+  #     --from-literal=microsoft-entra-id-client-id='<your-entra-client-id>' \
+  #     --from-literal=microsoft-entra-id-client-secret='<your-entra-client-secret>'
+  secrets:
+    existingSecret: "recipes-frontend-secrets"
+    keys:
+      authSecret: "auth-secret"
+      googleClientId: "google-client-id"
+      googleClientSecret: "google-client-secret"
+      # Set these to enable Microsoft Entra ID (Azure AD) login.
+      # Leave empty ("") to disable Microsoft login entirely.
+      microsoftEntraIdClientId: ""
+      microsoftEntraIdClientSecret: ""
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  ingress:
+    enabled: true
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: recipes.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: recipes-tls
+    #    hosts:
+    #      - recipes.example.com
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  probes:
+    liveness:
+      httpGet:
+        path: /login
+        port: http
+      initialDelaySeconds: 15
+      periodSeconds: 20
+    readiness:
+      httpGet:
+        path: /login
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ─────────────────────────────────────────────
+# Backend (Go REST API)
+# ─────────────────────────────────────────────
+backend:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/aresiusxp/recipes-backend
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  config:
+    # URL of the scraper service (internal ClusterIP)
+    scraperUrl: "http://recipes-scraper:3001"
+    # Directory where media files are stored (must match the PVC mount path)
+    mediaDir: "/media"
+    geminiModel: "gemini-2.0-flash"
+    logLevel: "info"
+    port: "8080"
+    # Comma-separated list of admin email addresses.
+    adminEmails: ""
+    # Comma-separated allowlist for new registrations (empty = open).
+    allowedEmails: ""
+
+  # Secret references — must exist in the cluster before deploying.
+  # Create with:
+  #   kubectl create secret generic recipes-backend-secrets \
+  #     --from-literal=auth-secret='<same-as-frontend>' \
+  #     --from-literal=database-url='postgresql://user:pass@postgres-host:5432/recipes' \
+  #     --from-literal=gemini-api-key='<your-gemini-key>' \
+  #     --from-literal=backend-internal-secret='<random-secret-shared-with-frontend>'
+  secrets:
+    existingSecret: "recipes-backend-secrets"
+    keys:
+      authSecret: "auth-secret"
+      databaseUrl: "database-url"
+      geminiApiKey: "gemini-api-key"
+      backendInternalSecret: "backend-internal-secret"
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  # Media persistent volume claim
+  mediaPvc:
+    enabled: true
+    storageClassName: ""
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    # Set to an existing PVC name to reuse
+    existingClaim: ""
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  probes:
+    liveness:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 20
+    readiness:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ─────────────────────────────────────────────
+# Scraper (Node.js + Playwright)
+# ─────────────────────────────────────────────
+scraper:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/aresiusxp/recipes-scraper
+    pullPolicy: IfNotPresent
+    tag: ""
+
+  config:
+    port: "3001"
+    logLevel: "info"
+    # Chromium executable path inside the container
+    playwrightExecutablePath: "/usr/bin/chromium"
+
+  service:
+    type: ClusterIP
+    port: 3001
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+  probes:
+    liveness:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 15
+      periodSeconds: 20
+    readiness:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

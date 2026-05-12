@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recipes.componentFullname" (dict "component" "backend" "context" .) }}
+  labels:
+    {{- include "recipes.componentLabels" (dict "component" "backend" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "recipes.componentSelectorLabels" (dict "component" "backend" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.componentSelectorLabels" (dict "component" "backend" "context" .) | nindent 8 }}
+    spec:
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          command: ["/app/migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.databaseUrl }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.backend.config.port | quote }}
+            - name: SCRAPER_URL
+              value: {{ .Values.backend.config.scraperUrl | quote }}
+            - name: MEDIA_DIR
+              value: {{ .Values.backend.config.mediaDir | quote }}
+            - name: GEMINI_MODEL
+              value: {{ .Values.backend.config.geminiModel | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.backend.config.logLevel | quote }}
+            - name: ADMIN_EMAILS
+              value: {{ .Values.backend.config.adminEmails | quote }}
+            - name: ALLOWED_EMAILS
+              value: {{ .Values.backend.config.allowedEmails | quote }}
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.authSecret }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.databaseUrl }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.geminiApiKey }}
+            - name: BACKEND_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.backendInternalSecret }}
+          {{- with .Values.backend.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.backend.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          volumeMounts:
+            - name: media
+              mountPath: {{ .Values.backend.config.mediaDir }}
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ if .Values.backend.mediaPvc.existingClaim }}{{ .Values.backend.mediaPvc.existingClaim }}{{ else }}{{ include "recipes.componentFullname" (dict "component" "backend" "context" .) }}-media{{ end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

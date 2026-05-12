@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "recipes.componentFullname" (dict "component" "frontend" "context" .) }}
+  labels:
+    {{- include "recipes.componentLabels" (dict "component" "frontend" "context" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "recipes.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "recipes.componentSelectorLabels" (dict "component" "frontend" "context" .) | nindent 8 }}
+    spec:
+      {{- if .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml .Values.dnsConfig | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: BACKEND_URL
+              value: {{ .Values.frontend.config.backendUrl | quote }}
+            - name: NEXTAUTH_URL
+              value: {{ .Values.frontend.config.nextauthUrl | quote }}
+            - name: AUTH_URL
+              value: {{ .Values.frontend.config.nextauthUrl | quote }}
+            - name: ALLOWED_EMAILS
+              value: {{ .Values.frontend.config.allowedEmails | quote }}
+            - name: ADMIN_EMAILS
+              value: {{ .Values.frontend.config.adminEmails | quote }}
+            - name: AUTH_TRUST_HOST
+              value: "true"
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.authSecret }}
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.googleClientId }}
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.googleClientSecret }}
+            {{- if and .Values.frontend.secrets.keys.microsoftEntraIdClientId .Values.frontend.secrets.keys.microsoftEntraIdClientSecret }}
+            - name: MICROSOFT_ENTRA_ID_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.microsoftEntraIdClientId }}
+            - name: MICROSOFT_ENTRA_ID_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.microsoftEntraIdClientSecret }}
+            - name: MICROSOFT_ENTRA_ID_ISSUER
+              value: {{ .Values.frontend.config.microsoftEntraIdIssuer | default "https://login.microsoftonline.com/common/v2.0" | quote }}
+            {{- end }}
+            - name: LOG_LEVEL
+              value: {{ .Values.frontend.config.logLevel | default "info" | quote }}
+            - name: APP_NAME
+              value: {{ .Values.frontend.config.appName | default "recipes-frontend" | quote }}
+          {{- with .Values.frontend.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.frontend.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+      {{- with .Values.frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
