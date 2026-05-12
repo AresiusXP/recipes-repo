@@ -80,7 +80,12 @@ func (h *AdminHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 	result, err := h.db.Exec(r.Context(), `
 		UPDATE "User" SET "isBanned"=true, "bannedAt"=$1 WHERE id=$2
 	`, now, userID)
-	if err != nil || result.RowsAffected() == 0 {
+	if err != nil {
+		slog.Error("failed to ban user", "error", err, "userId", userID)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if result.RowsAffected() == 0 {
 		jsonError(w, "User not found", http.StatusNotFound)
 		return
 	}
@@ -93,9 +98,14 @@ func (h *AdminHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 
 	result, err := h.db.Exec(r.Context(), `
-		UPDATE "User" SET "isBanned"=false, "bannedAt"=NULL WHERE id=$2
+		UPDATE "User" SET "isBanned"=false, "bannedAt"=NULL WHERE id=$1
 	`, userID)
-	if err != nil || result.RowsAffected() == 0 {
+	if err != nil {
+		slog.Error("failed to unban user", "error", err, "userId", userID)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if result.RowsAffected() == 0 {
 		jsonError(w, "User not found", http.StatusNotFound)
 		return
 	}

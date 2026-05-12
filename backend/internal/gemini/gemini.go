@@ -9,7 +9,14 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
+
+// geminiHTTPClient is a dedicated HTTP client with a timeout for Gemini API calls.
+// Using http.DefaultClient would allow goroutines to hang indefinitely.
+var geminiHTTPClient = &http.Client{
+	Timeout: 90 * time.Second,
+}
 
 // TargetLanguage represents a supported translation target.
 type TargetLanguage string
@@ -103,7 +110,7 @@ func callGemini(ctx context.Context, prompt string) (string, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := geminiHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("gemini API request failed: %w", err)
 	}

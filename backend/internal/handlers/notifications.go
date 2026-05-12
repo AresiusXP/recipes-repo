@@ -60,7 +60,12 @@ func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	result, err := h.db.Exec(r.Context(), `
 		UPDATE "Notification" SET "isRead"=true WHERE id=$1 AND "userId"=$2
 	`, notifID, userID)
-	if err != nil || result.RowsAffected() == 0 {
+	if err != nil {
+		slog.Error("failed to mark notification as read", "error", err)
+		jsonError(w, "Failed to mark notification as read", http.StatusInternalServerError)
+		return
+	}
+	if result.RowsAffected() == 0 {
 		jsonError(w, "Notification not found", http.StatusNotFound)
 		return
 	}
@@ -76,7 +81,12 @@ func (h *NotificationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	result, err := h.db.Exec(r.Context(), `
 		DELETE FROM "Notification" WHERE id=$1 AND "userId"=$2
 	`, notifID, userID)
-	if err != nil || result.RowsAffected() == 0 {
+	if err != nil {
+		slog.Error("failed to delete notification", "error", err)
+		jsonError(w, "Failed to delete notification", http.StatusInternalServerError)
+		return
+	}
+	if result.RowsAffected() == 0 {
 		jsonError(w, "Notification not found", http.StatusNotFound)
 		return
 	}

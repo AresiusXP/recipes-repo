@@ -44,6 +44,7 @@ func RequireAuth(next http.Handler) http.Handler {
 
 		tokenStr := parts[1]
 		secret := os.Getenv("AUTH_SECRET")
+		// AUTH_SECRET is validated at startup (main.go); this is a safety fallback.
 		if secret == "" {
 			http.Error(w, `{"error":"server misconfiguration"}`, http.StatusInternalServerError)
 			return

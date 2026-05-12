@@ -34,9 +34,17 @@ func (h *MediaHandler) ServeFile(w http.ResponseWriter, r *http.Request) {
 	fullPath := filepath.Join(dir, filename)
 
 	// Ensure path is inside media dir
-	absDir, _ := filepath.Abs(dir)
-	absPath, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absPath, absDir) {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

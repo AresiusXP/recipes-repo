@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/patriciodanos/recipes-repo/backend/internal/middleware"
 	"github.com/patriciodanos/recipes-repo/backend/internal/models"
@@ -34,7 +36,12 @@ func (h *UserHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		SELECT "autoTranslateLanguage", "themePreference" FROM "User" WHERE id=$1
 	`, userID).Scan(&settings.AutoTranslateLanguage, &settings.ThemePreference)
 	if err != nil {
-		jsonError(w, "User not found", http.StatusNotFound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			jsonError(w, "User not found", http.StatusNotFound)
+		} else {
+			slog.Error("failed to get user settings", "error", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -125,7 +132,13 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		deleteMediaFile(*oldImage)
 	}
 
-	h.db.Exec(r.Context(), `UPDATE "User" SET image=$1 WHERE id=$2`, publicPath, userID)
+	if _, err := h.db.Exec(r.Context(), `UPDATE "User" SET image=$1 WHERE id=$2`, publicPath, userID); err != nil {
+		slog.Error("failed to update user avatar in DB", "error", err)
+		// Clean up the written file to avoid orphaned media
+		os.Remove(filepath.Join(dir, filename))
+		jsonError(w, "Failed to update avatar", http.StatusInternalServerError)
+		return
+	}
 
 	jsonOK(w, map[string]string{"imagePath": publicPath})
 }

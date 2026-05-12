@@ -82,7 +82,9 @@ func (h *AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Update lastLoginAt
-		h.db.Exec(r.Context(), `UPDATE "User" SET "lastLoginAt"=$1 WHERE id=$2`, time.Now(), userID)
+		if _, err := h.db.Exec(r.Context(), `UPDATE "User" SET "lastLoginAt"=$1 WHERE id=$2`, time.Now(), userID); err != nil {
+			slog.Warn("failed to update lastLoginAt", "userId", userID, "error", err)
+		}
 		slog.Info("existing user signed in", "userId", userID)
 	} else {
 		// New user — create record
@@ -95,10 +97,13 @@ func (h *AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		`, newID, email, req.Name, req.Image, now)
 		if createErr != nil {
 			slog.Error("failed to create user on sign-in", "error", createErr)
-			// Don't block sign-in for DB errors
-		} else {
-			slog.Info("new user created on sign-in", "userId", newID)
+			reason := "failed to create user account"
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(signInResponse{Allowed: false, Reason: &reason})
+			return
 		}
+		slog.Info("new user created on sign-in", "userId", newID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

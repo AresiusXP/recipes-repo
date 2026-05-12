@@ -23,6 +23,12 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
 
+	// ── Startup validation ────────────────────────────────────────────────────
+	if os.Getenv("AUTH_SECRET") == "" {
+		slog.Error("AUTH_SECRET environment variable is required but not set")
+		os.Exit(1)
+	}
+
 	// ── Database ──────────────────────────────────────────────────────────────
 	ctx := context.Background()
 	pool, err := db.Connect(ctx)

@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-// Client is a client for the scraper microservice.
+// maxErrorBodySize limits how much of an error response body we read to avoid memory exhaustion.
+const maxErrorBodySize = 32 * 1024 // 32 KB
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
@@ -81,7 +82,7 @@ func (c *Client) Enqueue(ctx context.Context, jobID, url string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
 		return fmt.Errorf("scraper service returned %d: %s", resp.StatusCode, string(b))
 	}
 
@@ -108,7 +109,7 @@ func (c *Client) GetStatus(ctx context.Context, jobID string) (*JobStatus, error
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
 		return nil, fmt.Errorf("scraper service returned %d: %s", resp.StatusCode, string(b))
 	}
 

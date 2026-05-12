@@ -856,6 +856,7 @@ func (h *RecipeHandler) GetOtherUsers(w http.ResponseWriter, r *http.Request) {
 
 // ReconcilePendingJobs re-enqueues any import jobs that were left in
 // "pending", "scraping", or "extracting" state (e.g. from a pod restart).
+// A semaphore limits concurrent goroutines to avoid resource exhaustion.
 func (h *RecipeHandler) ReconcilePendingJobs(ctx context.Context) {
 	rows, err := h.db.Query(ctx, `
 		SELECT id, "userId", url FROM "RecipeImportJob"
@@ -868,6 +869,9 @@ func (h *RecipeHandler) ReconcilePendingJobs(ctx context.Context) {
 	}
 	defer rows.Close()
 
+	const maxConcurrent = 10
+	sem := make(chan struct{}, maxConcurrent)
+
 	count := 0
 	for rows.Next() {
 		var jobID, userID, url string
@@ -875,14 +879,26 @@ func (h *RecipeHandler) ReconcilePendingJobs(ctx context.Context) {
 			continue
 		}
 
-		if err := h.scraperClient.Enqueue(ctx, jobID, url); err != nil {
-			slog.Error("failed to re-enqueue job", "jobId", jobID, "error", err)
-			h.failJob(ctx, jobID, "Failed to re-enqueue after restart")
-			continue
+		// Text-import jobs (url == "") don't need scraper re-enqueue
+		if url != "" {
+			if err := h.scraperClient.Enqueue(ctx, jobID, url); err != nil {
+				slog.Error("failed to re-enqueue job", "jobId", jobID, "error", err)
+				h.failJob(ctx, jobID, "Failed to re-enqueue after restart")
+				continue
+			}
+			h.db.Exec(ctx, `UPDATE "RecipeImportJob" SET status='scraping', "updatedAt"=NOW() WHERE id=$1`, jobID)
 		}
 
-		h.db.Exec(ctx, `UPDATE "RecipeImportJob" SET status='scraping', "updatedAt"=NOW() WHERE id=$1`, jobID)
-		go h.processImportJob(jobID, userID, url)
+		sem <- struct{}{} // acquire slot
+		go func(jobID, userID, url string) {
+			defer func() { <-sem }() // release slot
+			if url != "" {
+				h.processImportJob(jobID, userID, url)
+			}
+			// Text-import jobs with url=="" cannot be re-processed without the original text;
+			// mark them as failed so the user can retry.
+			h.failJob(ctx, jobID, "Import interrupted by server restart; please retry")
+		}(jobID, userID, url)
 		count++
 	}
 
