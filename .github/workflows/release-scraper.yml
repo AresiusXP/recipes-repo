@@ -1,5 +1,7 @@
 # Release workflow for the scraper service.
 # Triggered on tags matching scraper-v* (e.g. scraper-v1.2.3).
+# Builds and pushes the scraper container image to GHCR, then updates the
+# unified helm/recipes chart (image tag + patch version bump) and releases it.
 
 name: Release — Scraper
 
@@ -10,11 +12,15 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  CHART_PATH: helm/recipes-scraper
+  CHART_PATH: helm/recipes
 
 permissions:
   contents: write
   packages: write
+
+concurrency:
+  group: helm-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -61,32 +67,43 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Update Chart.yaml versions
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-
-      - name: Package and push Helm chart
-        run: |
-          helm package "${{ env.CHART_PATH }}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
-            --username "${{ github.actor }}" --password-stdin
-          helm push recipes-scraper-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts
-
-      - name: Commit Chart.yaml and CHANGELOG.md to main
+      - name: Update chart — image tag and bump chart version
+        id: chart
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout -f main
+
           VERSION="${{ steps.version.outputs.version }}"
-          yq -i ".version = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
-          yq -i ".appVersion = \"${VERSION}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+
+          # Update the scraper image tag in values.yaml
+          yq -i ".scraper.image.tag = \"${VERSION}\"" "${{ env.CHART_PATH }}/values.yaml"
+
+          # Patch-bump the chart version (e.g. 1.2.3 -> 1.2.4)
+          CURRENT_CHART=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
+          NEW_CHART=$(echo "${CURRENT_CHART}" | awk -F. '{printf "%s.%s.%s", $1, $2, $3+1}')
+          yq -i ".version = \"${NEW_CHART}\"" "${{ env.CHART_PATH }}/Chart.yaml"
+          echo "chart_version=${NEW_CHART}" >> "$GITHUB_OUTPUT"
+
           node scripts/update-changelog.mjs "scraper-v${VERSION}"
-          git add "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
+
+          git add "${{ env.CHART_PATH }}/values.yaml" "${{ env.CHART_PATH }}/Chart.yaml" CHANGELOG.md
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "chore: bump scraper chart and update changelog for v${VERSION} [skip ci]"
+          git commit -m "chore(helm): bump scraper image to ${VERSION}, chart to ${NEW_CHART} [skip ci]"
           git pull --rebase origin main
           git push origin main
+
+      - name: Package and push Helm chart
+        run: |
+          # Re-checkout main and pull to get the committed Chart.yaml with the bumped version.
+          # Re-read the version from Chart.yaml rather than using the step output to avoid
+          # stale version if another release committed a further bump before this step ran.
+          git checkout -f main
+          git pull origin main
+          CHART_VERSION=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
+          helm package "${{ env.CHART_PATH }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
+            --username "${{ github.actor }}" --password-stdin
+          helm push "recipes-${CHART_VERSION}.tgz" \
+            "oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts"

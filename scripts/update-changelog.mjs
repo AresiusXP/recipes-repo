@@ -8,11 +8,13 @@
  *   node scripts/update-changelog.mjs <tag>
  *
  * Examples:
- *   node scripts/update-changelog.mjs v1.2.3          # app release
- *   node scripts/update-changelog.mjs helm-v1.2.4     # chart-only release
+ *   node scripts/update-changelog.mjs frontend-v1.2.3  # frontend service release
+ *   node scripts/update-changelog.mjs backend-v1.2.3   # backend service release
+ *   node scripts/update-changelog.mjs scraper-v1.2.3   # scraper service release
+ *   node scripts/update-changelog.mjs helm-v1.2.4      # chart-only release
  *
  * The script:
- *   1. Detects whether the tag is an app release (v*) or chart-only (helm-v*).
+ *   1. Detects the tag type (service release or chart-only).
  *   2. Finds the previous tag of the same type to establish the commit range.
  *   3. Collects commit messages in that range, filtering out noisy chore bumps.
  *   4. Prepends a formatted section to CHANGELOG.md.
@@ -46,8 +48,8 @@ function gitLines(cmd) {
  */
 function isNoise(subject) {
   return (
-    /^\s*chore:\s*bump chart to/i.test(subject) ||
-    /^\[skip ci\]/i.test(subject)
+    /chore(\(.*\))?:.*\[skip ci\]/i.test(subject) ||
+    /\[skip ci\]/i.test(subject)
   );
 }
 
@@ -60,17 +62,44 @@ if (!tag) {
 }
 
 const isAppRelease = /^v\d/.test(tag);
+const isFrontendRelease = /^frontend-v\d/.test(tag);
+const isBackendRelease = /^backend-v\d/.test(tag);
+const isScraperRelease = /^scraper-v\d/.test(tag);
+const isServiceRelease = isFrontendRelease || isBackendRelease || isScraperRelease;
 const isChartRelease = /^helm-v\d/.test(tag);
 
-if (!isAppRelease && !isChartRelease) {
-  console.error(`Unknown tag format: "${tag}". Expected v* or helm-v*.`);
+if (!isAppRelease && !isServiceRelease && !isChartRelease) {
+  console.error(`Unknown tag format: "${tag}". Expected frontend-v*, backend-v*, scraper-v*, helm-v*, or v*.`);
   process.exit(1);
 }
 
 // ── Version label ─────────────────────────────────────────────────────────────
 
-const version = isAppRelease ? tag.slice(1) : tag.replace(/^helm-v/, "");
-const releaseType = isAppRelease ? "App" : "Helm chart";
+let version;
+let releaseType;
+let tagPattern;
+
+if (isAppRelease) {
+  version = tag.slice(1);
+  releaseType = "App";
+  tagPattern = "v[0-9]*";
+} else if (isFrontendRelease) {
+  version = tag.replace(/^frontend-v/, "");
+  releaseType = "Frontend";
+  tagPattern = "frontend-v[0-9]*";
+} else if (isBackendRelease) {
+  version = tag.replace(/^backend-v/, "");
+  releaseType = "Backend";
+  tagPattern = "backend-v[0-9]*";
+} else if (isScraperRelease) {
+  version = tag.replace(/^scraper-v/, "");
+  releaseType = "Scraper";
+  tagPattern = "scraper-v[0-9]*";
+} else {
+  version = tag.replace(/^helm-v/, "");
+  releaseType = "Helm chart";
+  tagPattern = "helm-v[0-9]*";
+}
 
 // ── Date of the tag (or today if the tag doesn't exist yet) ──────────────────
 
@@ -83,7 +112,6 @@ try {
 
 // ── Previous tag of the same type ────────────────────────────────────────────
 
-const tagPattern = isAppRelease ? "v[0-9]*" : "helm-v[0-9]*";
 // List all matching tags sorted by version (oldest first).
 const allTags = gitLines(`tag --sort=version:refname --list "${tagPattern}"`);
 const currentIdx = allTags.indexOf(tag);
@@ -100,15 +128,31 @@ const commits = rawCommits.filter((s) => s && !isNoise(s));
 
 // ── Build entry ───────────────────────────────────────────────────────────────
 
-const header =
-  isAppRelease
-    ? `## [${version}] — ${date}`
-    : `## [Helm ${version}] — ${date}`;
+const serviceLabels = {
+  Frontend: "Frontend",
+  Backend: "Backend",
+  Scraper: "Scraper",
+  App: "App",
+  "Helm chart": "Helm chart",
+};
 
-const typeLabel =
-  isAppRelease
-    ? "_App release_"
-    : "_Chart-only release (appVersion unchanged)_";
+let header;
+let typeLabel;
+let changelogKey;
+
+if (isChartRelease) {
+  header = `## [Helm ${version}] — ${date}`;
+  typeLabel = "_Chart-only release (appVersion unchanged)_";
+  changelogKey = `Helm ${version}`;
+} else if (isAppRelease) {
+  header = `## [${version}] — ${date}`;
+  typeLabel = "_App release_";
+  changelogKey = version;
+} else {
+  header = `## [${serviceLabels[releaseType]} ${version}] — ${date}`;
+  typeLabel = `_${releaseType} service release_`;
+  changelogKey = `${serviceLabels[releaseType]} ${version}`;
+}
 
 const bulletLines =
   commits.length > 0
@@ -130,7 +174,7 @@ let existing = existsSync(CHANGELOG_PATH)
   : CHANGELOG_HEADER + "\n";
 
 // If the entry for this tag already exists, exit without writing.
-if (existing.includes(`## [${isAppRelease ? version : `Helm ${version}`}]`)) {
+if (existing.includes(`## [${changelogKey}]`)) {
   console.log(`Changelog entry for ${tag} already exists — skipping.`);
   process.exit(0);
 }

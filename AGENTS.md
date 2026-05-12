@@ -96,6 +96,41 @@ docker compose down
 
 The CI pipeline runs these automatically on path-filtered pushes/PRs.
 
+## Releases & Versioning
+
+Each service is versioned independently. Pushing a tag triggers the corresponding GitHub Actions release workflow, which builds the Docker image, updates the unified Helm chart, and pushes the chart to GHCR.
+
+### Tag scheme
+
+| Tag format | Example | What it does |
+|---|---|---|
+| `frontend-v<semver>` | `frontend-v1.3.0` | Builds & pushes the frontend image; updates `helm/recipes/values.yaml` `frontend.image.tag`; patch-bumps `helm/recipes/Chart.yaml`; releases the chart |
+| `backend-v<semver>` | `backend-v2.1.0` | Same for the backend image |
+| `scraper-v<semver>` | `scraper-v1.0.5` | Same for the scraper image |
+| `helm-v<semver>` | `helm-v0.5.0` | Chart-only release — no image build; sets `Chart.yaml` version exactly to the tag version; use when only Helm templates or values change |
+
+### Rules for @committer
+
+- **Only tag the service(s) whose code actually changed.** If only the frontend changed, push `frontend-v*` only.
+- **Use semantic versioning** (`MAJOR.MINOR.PATCH`). Increment PATCH for bug fixes, MINOR for new features, MAJOR for breaking changes.
+- **Never use `latest` as an image tag** — always use the explicit version from the tag.
+- **Service tags are independent** — `frontend-v1.3.0` and `backend-v2.1.0` can coexist; they do not need to match.
+- **The Helm chart version is managed automatically** by the service release workflows (patch-bumped on every service release). Only push a `helm-v*` tag manually when you need to release a chart change that has no associated service image change.
+- **Do not push multiple service tags simultaneously** unless you intend them to queue — the release workflows share a `concurrency: group: helm-release` lock and will run sequentially.
+
+### Workflow files
+
+| Workflow | File | Trigger |
+|---|---|---|
+| Release — Frontend | `.github/workflows/release-frontend.yml` | `frontend-v*` |
+| Release — Backend | `.github/workflows/release-backend.yml` | `backend-v*` |
+| Release — Scraper | `.github/workflows/release-scraper.yml` | `scraper-v*` |
+| Release — Helm chart | `.github/workflows/release-helm.yml` | `helm-v*` |
+
+### Helm chart
+
+The unified chart lives at `helm/recipes/`. It deploys all three services (frontend, backend, scraper) in a single `helm install`/`helm upgrade`. Image tags for each service are stored in `helm/recipes/values.yaml` under `frontend.image.tag`, `backend.image.tag`, and `scraper.image.tag` — these are updated automatically by the release workflows.
+
 ## Tech Stack
 
 ### Frontend
