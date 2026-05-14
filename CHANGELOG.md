@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.9.2] — 2026-05-14
+
+_Frontend service release_
+
+- fix(auth): pass secureCookie:true to getToken() to match HKDF salt
+- fix(auth): skip iss parameter check for Google OAuth provider
+
 ## [Frontend 0.9.1] — 2026-05-14
 
 _Frontend service release_
