@@ -82,13 +82,13 @@ function buildProviders() {
 /**
  * Notify the backend of a sign-in event.
  * The backend handles: ban checks, lastLoginAt updates, allowlist enforcement.
- * Returns { allowed: boolean, reason?: string }
+ * Returns { allowed: boolean, userId?: string, reason?: string }
  */
 async function notifyBackendSignIn(
   email: string,
   name: string | null | undefined,
   image: string | null | undefined
-): Promise<{ allowed: boolean; reason?: string }> {
+): Promise<{ allowed: boolean; userId?: string; reason?: string }> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/signin`, {
       method: "POST",
@@ -104,7 +104,8 @@ async function notifyBackendSignIn(
       const data = await res.json().catch(() => ({}));
       return { allowed: false, reason: data.reason || "sign-in rejected by backend" };
     }
-    return { allowed: true };
+    const data = await res.json().catch(() => ({}));
+    return { allowed: true, userId: data.userId as string | undefined };
   } catch (err) {
     log.error({ err }, "Failed to notify backend of sign-in");
     // Fail open: allow sign-in if backend is unreachable (avoids lockout during deploys)
@@ -145,6 +146,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return "/login?error=RegistrationNotAllowed";
       }
 
+      // Attach the backend UUID directly to the user object so the jwt callback
+      // can embed it in the token. This avoids any in-memory state and works
+      // correctly across multiple pods.
+      if (result.userId) {
+        (user as Record<string, unknown>).backendId = result.userId;
+      }
+
       return true;
     },
     async jwt({ token, user }) {
@@ -153,12 +161,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.email = user.email;
         token.name = user.name;
         token.picture = user.image;
+
+        // Use the backend UUID as the token subject so the Go backend can
+        // identify the user by their DB UUID rather than the OAuth provider ID.
+        const backendId = (user as Record<string, unknown>).backendId;
+        if (typeof backendId === "string" && backendId) {
+          token.sub = backendId;
+        }
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
+      if (session.user) {
+        // Prefer the backend UUID (token.sub) as the canonical user ID.
+        // token.id holds the OAuth provider ID; token.sub is set to the backend UUID on sign-in.
+        session.user.id = (token.sub || token.id) as string;
       }
       return session;
     },

@@ -4,15 +4,17 @@
  * Server-side API client for the Go backend.
  *
  * All functions run on the server (Next.js Server Components or Route Handlers).
- * They forward the raw NextAuth JWT as a Bearer header to the backend.
+ * They decode the NextAuth JWE session cookie and re-sign it as a plain HS256 JWS
+ * that the Go backend can verify with the shared AUTH_SECRET.
  *
  * The BACKEND_URL env var must point to the Go backend service
  * (e.g. http://recipes-backend:8080 in Kubernetes, http://localhost:8080 in dev).
  */
 
-import { auth } from "@/lib/auth";
 import { getToken } from "next-auth/jwt";
-import { headers } from "next/headers";
+import { SignJWT } from "jose";
+import { cookies, headers } from "next/headers";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
@@ -20,31 +22,26 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
 // ─── Auth helper ──────────────────────────────────────────────────────────────
 
 /**
- * Gets the raw encoded NextAuth JWT to forward as a Bearer token to the backend.
- * The Go backend validates this JWT using the shared AUTH_SECRET.
+ * Gets a signed HS256 JWS to forward as a Bearer token to the Go backend.
+ * NextAuth v5 stores sessions as JWE (encrypted). The Go backend expects a
+ * plain signed JWT (JWS). We decode the JWE with getToken() and re-sign the
+ * payload as HS256 using the shared AUTH_SECRET.
  * Redirects to /login if not authenticated.
+ * Cached per-request with React.cache() to avoid redundant re-signing.
  */
-async function getAuthToken(): Promise<string> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/login");
-  }
-
-  // Use getToken() to retrieve the raw encoded JWT from the session cookie.
-  // This is the token the Go backend can verify with the shared AUTH_SECRET.
+const getAuthToken = cache(async (): Promise<string> => {
+  // Use the cookies() helper for reliable cookie access.
+  const cookieStore = await cookies();
   const headersList = await headers();
+  const reqCookies = Object.fromEntries(
+    cookieStore.getAll().map((c) => [c.name, c.value])
+  );
+
+  // Decode the JWE session cookie into a plain payload object.
   const rawToken = await getToken({
     req: {
       headers: Object.fromEntries(headersList.entries()),
-      cookies: Object.fromEntries(
-        (headersList.get("cookie") || "")
-          .split(";")
-          .filter(Boolean)
-          .map((c) => {
-            const [k, ...v] = c.trim().split("=");
-            return [k.trim(), v.join("=")];
-          })
-      ),
+      cookies: reqCookies,
     } as Parameters<typeof getToken>[0]["req"],
     secret: process.env.AUTH_SECRET!,
   });
@@ -53,27 +50,18 @@ async function getAuthToken(): Promise<string> {
     redirect("/login");
   }
 
-  // getToken returns the decoded payload; we need the raw encoded string.
-  // Auth.js v5 stores the session cookie as an encoded JWT — re-encode it.
-  // Since the Go backend validates with the same AUTH_SECRET, we pass the
-  // cookie value directly by reading it from the cookie header.
-  const cookieHeader = headersList.get("cookie") || "";
-  const sessionCookieName =
-    process.env.NODE_ENV === "production"
-      ? "__Secure-authjs.session-token"
-      : "authjs.session-token";
-  const cookieMatch = cookieHeader
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${sessionCookieName}=`));
+  // Re-sign the decoded payload as a plain HS256 JWS that the Go backend can verify.
+  const secret = new TextEncoder().encode(process.env.AUTH_SECRET!);
+  const { iat, exp, jti, ...payload } = rawToken;
+  const jws = await new SignJWT(payload as Record<string, unknown>)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(iat)
+    .setExpirationTime(exp ?? Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60)
+    .setJti(jti ?? crypto.randomUUID())
+    .sign(secret);
 
-  if (cookieMatch) {
-    return cookieMatch.slice(sessionCookieName.length + 1);
-  }
-
-  // Fallback: should not reach here if session is valid
-  redirect("/login");
-}
+  return jws;
+});
 
 // ─── Generic fetch wrapper ────────────────────────────────────────────────────
 

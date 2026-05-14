@@ -74,11 +74,11 @@ async function migrate() {
     // ── Read all SQLite data ──────────────────────────────────────────────────
     console.log("\n📊 Reading SQLite data...");
 
+    // Tables that exist in the new PostgreSQL schema.
+    // Account, Session, VerificationToken were NextAuth legacy tables in SQLite
+    // and are not present in the new schema.
     const tables = [
       "User",
-      "Account",
-      "Session",
-      "VerificationToken",
       "Recipe",
       "Tag",
       "RecipeTag",
@@ -112,65 +112,23 @@ async function migrate() {
     for (const u of data["User"]) {
       await client.query(
         `INSERT INTO "User" (
-          id, name, email, "emailVerified", image,
+          id, name, email, image,
           "autoTranslateLanguage", "themePreference",
-          "createdAt", "lastLoginAt", "isBanned", "bannedAt"
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          "createdAt", "lastLoginAt", "isBanned"
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         ON CONFLICT (id) DO NOTHING`,
         [
           u.id, nullify(u.name), nullify(u.email),
-          nullify(u.emailVerified), nullify(u.image),
+          nullify(u.image),
           nullify(u.autoTranslateLanguage),
           u.themePreference ?? "system",
           u.createdAt, nullify(u.lastLoginAt),
           u.isBanned === 1 || u.isBanned === true,
-          nullify(u.bannedAt),
         ]
       );
     }
 
-    // 2. Accounts
-    console.log(`  Inserting ${count(data["Account"])} accounts...`);
-    for (const a of data["Account"]) {
-      await client.query(
-        `INSERT INTO "Account" (
-          id, "userId", type, provider, "providerAccountId",
-          refresh_token, access_token, expires_at,
-          token_type, scope, id_token, session_state
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-        ON CONFLICT (id) DO NOTHING`,
-        [
-          a.id, a.userId, a.type, a.provider, a.providerAccountId,
-          nullify(a.refresh_token), nullify(a.access_token),
-          nullify(a.expires_at), nullify(a.token_type),
-          nullify(a.scope), nullify(a.id_token), nullify(a.session_state),
-        ]
-      );
-    }
-
-    // 3. Sessions
-    console.log(`  Inserting ${count(data["Session"])} sessions...`);
-    for (const s of data["Session"]) {
-      await client.query(
-        `INSERT INTO "Session" (id, "sessionToken", "userId", expires)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (id) DO NOTHING`,
-        [s.id, s.sessionToken, s.userId, s.expires]
-      );
-    }
-
-    // 4. VerificationTokens
-    console.log(`  Inserting ${count(data["VerificationToken"])} verification tokens...`);
-    for (const v of data["VerificationToken"]) {
-      await client.query(
-        `INSERT INTO "VerificationToken" (identifier, token, expires)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (identifier, token) DO NOTHING`,
-        [v.identifier, v.token, v.expires]
-      );
-    }
-
-    // 5. Tags
+    // 2. Tags (before Recipes, since RecipeTag depends on both)
     console.log(`  Inserting ${count(data["Tag"])} tags...`);
     for (const t of data["Tag"]) {
       await client.query(
@@ -180,7 +138,7 @@ async function migrate() {
       );
     }
 
-    // 6. Recipes
+    // 3. Recipes
     console.log(`  Inserting ${count(data["Recipe"])} recipes...`);
     for (const r of data["Recipe"]) {
       await client.query(
@@ -191,8 +149,8 @@ async function migrate() {
           "createdAt", "updatedAt",
           "sourceLanguage", "isTranslatedToEnglish",
           "translatedLanguage", "hasBeenTranslated",
-          "sharedByUserId", "sharedFromRecipeId", "userId"
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          "userId"
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         ON CONFLICT (id) DO NOTHING`,
         [
           r.id, r.title, nullify(r.description), nullify(r.sourceUrl),
@@ -204,12 +162,12 @@ async function migrate() {
           r.isTranslatedToEnglish === 1 || r.isTranslatedToEnglish === true,
           nullify(r.translatedLanguage),
           r.hasBeenTranslated === 1 || r.hasBeenTranslated === true,
-          nullify(r.sharedByUserId), nullify(r.sharedFromRecipeId), r.userId,
+          r.userId,
         ]
       );
     }
 
-    // 7. RecipeTags
+    // 4. RecipeTags
     console.log(`  Inserting ${count(data["RecipeTag"])} recipe-tag associations...`);
     for (const rt of data["RecipeTag"]) {
       await client.query(
@@ -219,20 +177,21 @@ async function migrate() {
       );
     }
 
-    // 8. Notifications
+    // 5. Notifications
+    const migratedRecipeIds = new Set(data["Recipe"].map((r) => r.id));
     console.log(`  Inserting ${count(data["Notification"])} notifications...`);
     for (const n of data["Notification"]) {
       await client.query(
         `INSERT INTO "Notification" (
-          id, type, title, message, "isRead", "createdAt",
-          "userId", "senderUserId", "recipeId"
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          id, type, message, "isRead", "createdAt",
+          "userId", "recipeId"
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7)
         ON CONFLICT (id) DO NOTHING`,
         [
-          n.id, n.type, n.title, n.message,
+          n.id, n.type, n.message,
           n.isRead === 1 || n.isRead === true,
           n.createdAt, n.userId,
-          nullify(n.senderUserId), nullify(n.recipeId),
+          n.recipeId && migratedRecipeIds.has(n.recipeId) ? n.recipeId : null,
         ]
       );
     }

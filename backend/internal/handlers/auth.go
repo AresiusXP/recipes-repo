@@ -31,6 +31,7 @@ type signInRequest struct {
 type signInResponse struct {
 	Allowed bool    `json:"allowed"`
 	Reason  *string `json:"reason,omitempty"`
+	UserID  string  `json:"userId,omitempty"`
 }
 
 // SignIn is called by the frontend NextAuth signIn callback.
@@ -63,49 +64,42 @@ func (h *AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user exists
+	// Upsert the user: insert if new, update lastLoginAt if existing.
+	// RETURNING id, "isBanned" ensures we always get the canonical DB UUID,
+	// even under concurrent sign-ins for the same email.
+	newID := uuid.New().String()
+	now := time.Now()
 	var userID string
 	var isBanned bool
 	err := h.db.QueryRow(r.Context(), `
-		SELECT id, "isBanned" FROM "User" WHERE email=$1
-	`, email).Scan(&userID, &isBanned)
-
-	if err == nil {
-		// Existing user
-		if isBanned {
-			slog.Warn("sign-in rejected: user is banned", "userId", userID)
-			reason := "banned"
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			json.NewEncoder(w).Encode(signInResponse{Allowed: false, Reason: &reason})
-			return
-		}
-
-		// Update lastLoginAt
-		if _, err := h.db.Exec(r.Context(), `UPDATE "User" SET "lastLoginAt"=$1 WHERE id=$2`, time.Now(), userID); err != nil {
-			slog.Warn("failed to update lastLoginAt", "userId", userID, "error", err)
-		}
-		slog.Info("existing user signed in", "userId", userID)
-	} else {
-		// New user — create record
-		newID := uuid.New().String()
-		now := time.Now()
-		_, createErr := h.db.Exec(r.Context(), `
-			INSERT INTO "User" (id, email, name, image, "themePreference", "createdAt", "lastLoginAt", "isBanned")
-			VALUES ($1, $2, $3, $4, 'system', $5, $5, false)
-			ON CONFLICT (email) DO NOTHING
-		`, newID, email, req.Name, req.Image, now)
-		if createErr != nil {
-			slog.Error("failed to create user on sign-in", "error", createErr)
-			reason := "failed to create user account"
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(signInResponse{Allowed: false, Reason: &reason})
-			return
-		}
-		slog.Info("new user created on sign-in", "userId", newID)
+		INSERT INTO "User" (id, email, name, image, "themePreference", "createdAt", "lastLoginAt", "isBanned")
+		VALUES ($1, $2, $3, $4, 'system', $5, $5, false)
+		ON CONFLICT (email) DO UPDATE
+		  SET "lastLoginAt" = EXCLUDED."lastLoginAt",
+		      name          = COALESCE(EXCLUDED.name, "User".name),
+		      image         = COALESCE(EXCLUDED.image, "User".image)
+		RETURNING id, "isBanned"
+	`, newID, email, req.Name, req.Image, now).Scan(&userID, &isBanned)
+	if err != nil {
+		slog.Error("failed to upsert user on sign-in", "error", err)
+		reason := "failed to create user account"
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(signInResponse{Allowed: false, Reason: &reason})
+		return
 	}
 
+	if isBanned {
+		slog.Warn("sign-in rejected: user is banned", "userId", userID)
+		reason := "banned"
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(signInResponse{Allowed: false, Reason: &reason})
+		return
+	}
+
+	slog.Info("user signed in", "userId", userID)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(signInResponse{Allowed: true})
+	json.NewEncoder(w).Encode(signInResponse{Allowed: true, UserID: userID})
 }
