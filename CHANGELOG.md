@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.9.4] — 2026-05-14
+
+_Frontend service release_
+
+- fix(frontend): fix import status poller auth (secureCookie + JWS re-sign)
+- fix(backend): accept DD/MM/YYYY date format for cookThisWeek
+- fix(backend): include name, email, image in GetSettings response
+- fix(backend): include recipeCount and accountProviders in admin user list
+- fix(db): add missing bannedAt column to User table
+
 ## [Backend 1.1.3] — 2026-05-14
 
 _Backend service release_
