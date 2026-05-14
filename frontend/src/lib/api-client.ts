@@ -44,6 +44,9 @@ const getAuthToken = cache(async (): Promise<string> => {
       cookies: reqCookies,
     } as Parameters<typeof getToken>[0]["req"],
     secret: process.env.AUTH_SECRET!,
+    // Must match the secure context used during encryption.
+    // NextAuth sets __Secure-authjs.session-token on HTTPS; the salt must match.
+    secureCookie: true,
   });
 
   if (!rawToken) {
