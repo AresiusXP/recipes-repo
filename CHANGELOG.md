@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.1.3] — 2026-05-14
+
+_Backend service release_
+
+- fix(backend): accept DD/MM/YYYY date format for cookThisWeek
+
 ## [Backend 1.1.2] — 2026-05-14
 
 _Backend service release_
