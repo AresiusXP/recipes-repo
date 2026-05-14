@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.2.2] — 2026-05-14
+
+_Backend service release_
+
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+
 ## [Scraper 1.0.1] — 2026-05-14
 
 _Scraper service release_
