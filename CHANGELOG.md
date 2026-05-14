@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.2.1] — 2026-05-14
+
+_Backend service release_
+
+- fix(backend): don't overwrite name/image on subsequent OAuth sign-ins
+
 ## [Frontend 0.9.5] — 2026-05-14
 
 _Frontend service release_
