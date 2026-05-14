@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.9.0] — 2026-05-14
+
+_Frontend service release_
+
+- fix(auth): restore backend API auth for NextAuth v5 sessions
+- fix(helm): replace non-ASCII chars in values.yaml to fix Argo CD gRPC UTF-8 error
+- docs(agents): sync AGENTS.md with current architecture
+- chore(helm): bump chart version to 0.1.3
+- fix(helm): restore backend schema init and frontend auth secret
+- docs: rewrite README to reflect current monorepo architecture
+- chore(helm): tag helm-v0.1.2 release
+- ci: use plain ASCII dashes in release workflow names
+- ci: rewrite release workflows for unified Helm chart and add chart-only release
+- feat(helm): unify service charts and migrate scraper to ESLint v9
+
 ## [Backend 1.1.0] — 2026-05-14
 
 _Backend service release_
