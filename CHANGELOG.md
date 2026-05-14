@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.1.1] — 2026-05-14
+
+_Backend service release_
+
+- fix(backend): include recipeCount and accountProviders in admin user list
+- fix(db): add missing bannedAt column to User table
+- fix(db+frontend): add missing columns and media proxy route
+- chore: add missing package-lock files and ignore e2e test-results
+- fix(auth): pass secureCookie:true to getToken() to match HKDF salt
+- fix(auth): skip iss parameter check for Google OAuth provider
+
 ## [Frontend 0.9.3] — 2026-05-14
 
 _Frontend service release_
