@@ -85,6 +85,11 @@ spec:
               value: {{ .Values.frontend.config.logLevel | default "info" | quote }}
             - name: APP_NAME
               value: {{ .Values.frontend.config.appName | default "recipes-frontend" | quote }}
+            - name: BACKEND_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.frontend.secrets.existingSecret }}
+                  key: {{ .Values.frontend.secrets.keys.backendInternalSecret }}
           {{- with .Values.frontend.probes.liveness }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

@@ -35,9 +35,10 @@ frontend:
   # Secret references — must exist in the cluster before deploying.
   # Create with:
   #   kubectl create secret generic recipes-frontend-secrets \
-  #     --from-literal=auth-secret='<random-secret>' \
+  #     --from-literal=auth-secret='<random-secret-shared-with-backend>' \
   #     --from-literal=google-client-id='<your-id>' \
-  #     --from-literal=google-client-secret='<your-secret>'
+  #     --from-literal=google-client-secret='<your-secret>' \
+  #     --from-literal=backend-internal-secret='<random-secret-shared-with-backend>'
   #
   # To also enable Microsoft login, add:
   #     --from-literal=microsoft-entra-id-client-id='<your-entra-client-id>' \
@@ -48,6 +49,8 @@ frontend:
       authSecret: "auth-secret"
       googleClientId: "google-client-id"
       googleClientSecret: "google-client-secret"
+      # Shared secret protecting the internal auth endpoint — must match backend.
+      backendInternalSecret: "backend-internal-secret"
       # Set these to enable Microsoft Entra ID (Azure AD) login.
       # Leave empty ("") to disable Microsoft login entirely.
       microsoftEntraIdClientId: ""
@@ -131,6 +134,10 @@ backend:
   service:
     type: ClusterIP
     port: 8080
+  # Migration initContainer — runs schema.sql against PostgreSQL before the backend starts.
+  # Uses a postgres client image (psql). Must be compatible with your PostgreSQL server version.
+  migrate:
+    image: "postgres:17-alpine"
   # Media persistent volume claim
   mediaPvc:
     enabled: true

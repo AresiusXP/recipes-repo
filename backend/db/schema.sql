@@ -1,6 +1,10 @@
 -- ─── Database schema for Recipes app ─────────────────────────────────────────
--- This file is used to initialise the database in Docker Compose / E2E.
--- In production (Kubernetes) the initContainer runs `prisma migrate deploy`.
+-- This file is used to initialise the database in Docker Compose / E2E and
+-- in production (Kubernetes) via a psql initContainer in the backend Deployment.
+-- All statements are idempotent (IF NOT EXISTS) and safe to re-run on upgrade.
+--
+-- IMPORTANT: If you change this file, also update the copy in:
+--   helm/recipes/templates/backend-schema-configmap.yaml
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
