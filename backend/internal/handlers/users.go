@@ -33,8 +33,8 @@ func (h *UserHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 
 	var settings models.UserSettings
 	err := h.db.QueryRow(r.Context(), `
-		SELECT "autoTranslateLanguage", "themePreference" FROM "User" WHERE id=$1
-	`, userID).Scan(&settings.AutoTranslateLanguage, &settings.ThemePreference)
+		SELECT name, email, image, "autoTranslateLanguage", "themePreference" FROM "User" WHERE id=$1
+	`, userID).Scan(&settings.Name, &settings.Email, &settings.Image, &settings.AutoTranslateLanguage, &settings.ThemePreference)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			jsonError(w, "User not found", http.StatusNotFound)

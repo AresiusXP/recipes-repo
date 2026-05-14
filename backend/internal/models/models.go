@@ -18,6 +18,9 @@ type User struct {
 }
 
 type UserSettings struct {
+	Name                  *string `json:"name"`
+	Email                 *string `json:"email"`
+	Image                 *string `json:"image"`
 	AutoTranslateLanguage *string `json:"autoTranslateLanguage"`
 	ThemePreference       string  `json:"themePreference"`
 }
