@@ -77,9 +77,7 @@ func (h *AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO "User" (id, email, name, image, "themePreference", "createdAt", "lastLoginAt", "isBanned")
 		VALUES ($1, $2, $3, $4, 'system', $5, $5, false)
 		ON CONFLICT (email) DO UPDATE
-		  SET "lastLoginAt" = EXCLUDED."lastLoginAt",
-		      name          = COALESCE(EXCLUDED.name, "User".name),
-		      image         = COALESCE(EXCLUDED.image, "User".image)
+		  SET "lastLoginAt" = EXCLUDED."lastLoginAt"
 		RETURNING id, "isBanned"
 	`, newID, email, req.Name, req.Image, now).Scan(&userID, &isBanned)
 	if err != nil {
