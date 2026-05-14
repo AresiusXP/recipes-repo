@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.4] — 2026-05-14
+
+_Chart-only release (appVersion unchanged)_
+
+- fix(helm): replace non-ASCII chars in values.yaml to fix Argo CD gRPC UTF-8 error
+- docs(agents): sync AGENTS.md with current architecture
+- chore(helm): bump chart version to 0.1.3
+- fix(helm): restore backend schema init and frontend auth secret
+- docs: rewrite README to reflect current monorepo architecture
+
 ## [Helm 0.1.3] — 2026-05-14
 
 _Chart-only release (appVersion unchanged)_
