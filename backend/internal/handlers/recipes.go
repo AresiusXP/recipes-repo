@@ -673,7 +673,7 @@ func (h *RecipeHandler) SetCookThisWeek(w http.ResponseWriter, r *http.Request) 
 	recipeID := chi.URLParam(r, "id")
 
 	var body struct {
-		ExpiryDate string `json:"expiryDate"` // "DD-MM-YYYY"
+		ExpiryDate string `json:"expiryDate"` // "DD/MM/YYYY"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
@@ -1021,11 +1021,11 @@ func hasAnyTag(recipeTags, filterTags []string) bool {
 }
 
 func parseDayMonthYear(s string) (time.Time, error) {
-	parts := strings.Split(s, "-")
+	parts := strings.Split(s, "/")
 	if len(parts) != 3 {
-		return time.Time{}, fmt.Errorf("invalid date format, expected DD-MM-YYYY")
+		return time.Time{}, fmt.Errorf("invalid date format, expected DD/MM/YYYY")
 	}
-	return time.Parse("02-01-2006", s)
+	return time.Parse("02/01/2006", s)
 }
 
 func min(a, b int) int {
