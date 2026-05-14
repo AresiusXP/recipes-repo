@@ -28,9 +28,7 @@ recipes-repo/
 ├── scraper/      # Node.js scraper microservice (Playwright + Cheerio, ~512Mi)
 ├── e2e/          # Playwright end-to-end tests (manually triggered in CI)
 ├── helm/
-│   ├── recipes-frontend/   # Helm chart for the frontend
-│   ├── recipes-backend/    # Helm chart for the backend (includes media PVC)
-│   └── recipes-scraper/    # Helm chart for the scraper
+│   └── recipes/            # Unified Helm chart (deploys all three services)
 ├── docker-compose.yml      # Spins up all services for E2E / local dev
 └── .github/workflows/      # Path-based CI + tag-based release + E2E workflows
 ```
@@ -59,12 +57,12 @@ go test ./...        # Run all tests
 go vet ./...         # Static analysis
 ```
 
-The backend uses **Prisma** only for migrations (run as a Kubernetes initContainer). The Go runtime uses `pgx/v5` directly via `sqlc`-generated queries.
+The backend uses **`pgx/v5`** directly via `sqlc`-generated queries. The database schema is defined in `backend/db/schema.sql` and applied by a `psql` initContainer on pod start (idempotent — safe to re-run).
 
 ```bash
-# From backend/
-npx prisma migrate dev   # Create a new migration (requires DATABASE_URL)
-npx prisma migrate deploy # Apply pending migrations (used in initContainer)
+# No Prisma migration commands needed at runtime.
+# To apply the schema manually (e.g. first-time local setup):
+psql $DATABASE_URL -f backend/db/schema.sql
 ```
 
 ### Scraper (`scraper/`)
@@ -116,6 +114,7 @@ Each service is versioned independently. Pushing a tag triggers the correspondin
 - **Never use `latest` as an image tag** — always use the explicit version from the tag.
 - **Service tags are independent** — `frontend-v1.3.0` and `backend-v2.1.0` can coexist; they do not need to match.
 - **The Helm chart version is managed automatically** by the service release workflows (patch-bumped on every service release). Only push a `helm-v*` tag manually when you need to release a chart change that has no associated service image change.
+- **When pushing a `helm-v*` tag**, first manually bump `version` in `helm/recipes/Chart.yaml` to match the tag, commit, then push the tag. The tag version and `Chart.yaml` version must match.
 - **Do not push multiple service tags simultaneously** unless you intend them to queue — the release workflows share a `concurrency: group: helm-release` lock and will run sequentially.
 
 ### Workflow files
@@ -324,8 +323,8 @@ Recipes support on-demand translation into **English**, **Dutch**, or **Spanish*
 ## Database
 
 - **PostgreSQL** — deployed via the [CloudPirates Helm chart](https://github.com/CloudPirates-io/helm-charts/tree/main/charts/postgres).
-- **Schema** is defined in `backend/prisma/schema.prisma`.
-- **Migrations** are applied by a Kubernetes initContainer running `prisma migrate deploy` before the backend pod starts.
+- **Schema** is defined in `backend/db/schema.sql` (source of truth). All statements use `IF NOT EXISTS` and are idempotent.
+- **Migrations** are applied by a Kubernetes initContainer running `psql "$DATABASE_URL" -f /schema/schema.sql` using the `postgres:17-alpine` image. The SQL is embedded in `helm/recipes/templates/backend-schema-configmap.yaml` — **keep this in sync with `backend/db/schema.sql`** when the schema changes.
 - **Runtime access** is via `pgx/v5` in Go — Prisma is not used at runtime.
 - `ingredients` and `steps` are stored as JSON strings (`JSON.stringify`/`JSON.parse`), not normalized tables.
 
@@ -376,6 +375,7 @@ A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres
 | `MICROSOFT_ENTRA_ID_ISSUER` | Microsoft issuer URL (default: `common`) |
 | `NEXTAUTH_URL` / `AUTH_URL` | App base URL for OAuth callbacks |
 | `BACKEND_URL` | Go backend service URL (e.g. `http://recipes-backend:8080`) |
+| `BACKEND_INTERNAL_SECRET` | Shared secret protecting the internal auth endpoint (must match backend) |
 | `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations (empty = open) |
 | `ADMIN_EMAILS` | Comma-separated list of admin emails |
 
@@ -389,6 +389,7 @@ A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres
 | `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
 | `SCRAPER_URL` | Scraper service URL (e.g. `http://recipes-scraper:3001`) |
+| `BACKEND_INTERNAL_SECRET` | Shared secret protecting the internal auth endpoint (must match frontend) |
 | `ADMIN_EMAILS` | Comma-separated list of admin emails |
 | `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations |
 
