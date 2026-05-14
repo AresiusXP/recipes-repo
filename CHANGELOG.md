@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.2] — 2026-05-14
+
+_Chart-only release (appVersion unchanged)_
+
+- chore(helm): tag helm-v0.1.2 release
+- ci: use plain ASCII dashes in release workflow names
+
 ## [Backend 1.0.0] — 2026-05-12
 
 _Backend service release_
