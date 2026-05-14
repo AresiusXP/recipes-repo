@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS "User" (
   "themePreference"     TEXT        NOT NULL DEFAULT 'system',
   "autoTranslateLanguage" TEXT,
   "isBanned"            BOOLEAN     NOT NULL DEFAULT false,
+  "bannedAt"            TIMESTAMPTZ,
   "createdAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "lastLoginAt"         TIMESTAMPTZ
 );
