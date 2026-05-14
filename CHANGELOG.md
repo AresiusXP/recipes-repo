@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.9.1] — 2026-05-14
+
+_Frontend service release_
+
+- fix(auth): skip iss parameter check for Google OAuth provider
+
 ## [Frontend 0.9.0] — 2026-05-14
 
 _Frontend service release_
