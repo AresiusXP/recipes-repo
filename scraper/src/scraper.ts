@@ -461,10 +461,15 @@ async function fetchWithBrowser(
 
     log.debug({ url }, "Browser navigating to URL");
 
-    await page.goto(url, {
+    const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
+
+    // Check HTTP status — some sites return 403 even to real browsers
+    if (response && (response.status() === 403 || response.status() === 401)) {
+      throw new SiteBlockedError(response.status(), httpStatusText(response.status()));
+    }
 
     // Wait a moment for any JS-driven redirects or content injection to settle
     await page.waitForTimeout(2000);
@@ -564,8 +569,10 @@ function extractFromHtml(html: string): { title: string; content: string; imageU
  * 2. If curl lands on a login/auth wall (detected by redirect domain or page signals),
  *    automatically retry with a real Chromium browser via Playwright.
  * 3. If the browser also lands on a login wall, throw LoginWallError.
- * 4. If curl gets a hard 403/401, throw SiteBlockedError (no browser retry — the
- *    site is actively blocking and a browser is unlikely to help).
+ * 4. If curl gets a hard 403/401 on all strategies, also try the browser fallback —
+ *    some sites use JS-based bot detection (e.g. Cloudflare) that blocks curl's TLS
+ *    fingerprint but allows a real browser through. If the browser also fails or is
+ *    blocked, throw SiteBlockedError.
  */
 export async function scrapePage(url: string): Promise<ScrapedPage> {
   const log = logger.child({ component: "scraper", url });
@@ -573,7 +580,63 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
   log.debug("Fetching page");
 
   // ── Step 1: try curl ──
-  const { body: html, effectiveUrl } = await fetchWithStrategies(url, log);
+  let html: string;
+  let effectiveUrl: string;
+
+  try {
+    const curlResult = await fetchWithStrategies(url, log);
+    html = curlResult.body;
+    effectiveUrl = curlResult.effectiveUrl;
+  } catch (err) {
+    if (err instanceof SiteBlockedError) {
+      // curl was blocked (403/401) — try browser fallback before giving up
+      log.warn(
+        { status: err.status },
+        "All curl strategies blocked (403/401) — trying browser fallback"
+      );
+
+      let browserHtml: string;
+      let browserEffectiveUrl: string;
+      try {
+        const result = await fetchWithBrowser(url, log);
+        browserHtml = result.html;
+        browserEffectiveUrl = result.effectiveUrl;
+      } catch (browserError) {
+        const msg = browserError instanceof Error ? browserError.message : "Unknown error";
+        log.warn({ err: msg }, "Browser fallback failed after curl block");
+        throw err;
+      }
+
+      // Check if the browser also hit a login wall
+      const browserLoginWallReason = detectLoginWall(browserHtml, browserEffectiveUrl, url);
+      if (browserLoginWallReason) {
+        log.warn(
+          { browserEffectiveUrl, reason: browserLoginWallReason },
+          "Browser fallback landed on login/auth wall after curl block"
+        );
+        throw new LoginWallError(browserEffectiveUrl);
+      }
+
+      // Browser succeeded — extract from browser-rendered HTML
+      const extracted = extractFromHtml(browserHtml);
+      const result: ScrapedPage = { ...extracted, usedBrowserFallback: true };
+
+      log.info(
+        {
+          contentLength: result.content.length,
+          hasImage: !!result.imageUrl,
+          effectiveUrl: browserEffectiveUrl,
+          usedBrowserFallback: true,
+          title: result.title.slice(0, 100),
+        },
+        "Page scraped successfully (browser fallback after curl block)"
+      );
+
+      return result;
+    }
+    // Non-403 curl error — re-throw as-is
+    throw err;
+  }
 
   // ── Step 2: check for login/auth wall ──
   const loginWallReason = detectLoginWall(html, effectiveUrl, url);
