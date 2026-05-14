@@ -1,5 +1,5 @@
-import { auth } from "@/lib/auth";
 import { getToken } from "next-auth/jwt";
+import { SignJWT } from "jose";
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
@@ -8,35 +8,33 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  // Decode the JWE session cookie. secureCookie: true ensures the HKDF salt
+  // matches the __Secure- prefixed cookie name used on HTTPS.
+  const rawToken = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET!,
+    secureCookie: true,
+  });
+
+  if (!rawToken?.sub) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Re-sign the decoded payload as a plain HS256 JWS that the Go backend can verify.
+  const secret = new TextEncoder().encode(process.env.AUTH_SECRET!);
+  const { iat, exp, jti, ...payload } = rawToken;
+  const jws = await new SignJWT(payload as Record<string, unknown>)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(iat)
+    .setExpirationTime(exp ?? Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60)
+    .setJti(jti ?? crypto.randomUUID())
+    .sign(secret);
 
   const { jobId } = await params;
 
-  // Read the raw encoded session cookie to forward as Bearer token.
-  // The Go backend validates this JWT using the shared AUTH_SECRET.
-  const sessionCookieName =
-    process.env.NODE_ENV === "production"
-      ? "__Secure-authjs.session-token"
-      : "authjs.session-token";
-
-  const rawCookie = req.cookies.get(sessionCookieName)?.value;
-
-  // Verify the token is valid before forwarding
-  const decoded = await getToken({
-    req,
-    secret: process.env.AUTH_SECRET!,
-  });
-
-  if (!decoded || !rawCookie) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const res = await fetch(`${BACKEND_URL}/api/recipes/import/${jobId}`, {
     headers: {
-      Authorization: `Bearer ${rawCookie}`,
+      Authorization: `Bearer ${jws}`,
     },
     cache: "no-store",
   });
