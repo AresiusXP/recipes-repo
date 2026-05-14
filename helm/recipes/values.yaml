@@ -177,7 +177,7 @@ scraper:
   image:
     repository: ghcr.io/aresiusxp/recipes-scraper
     pullPolicy: IfNotPresent
-    tag: "1.0.0"
+    tag: "1.0.1"
   config:
     port: "3001"
     logLevel: "info"

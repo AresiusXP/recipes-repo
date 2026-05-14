@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Scraper 1.0.1] — 2026-05-14
+
+_Scraper service release_
+
+- fix(scraper): retry blocked fetches in Playwright
+- fix(backend): don't overwrite name/image on subsequent OAuth sign-ins
+- feat: implement linked accounts (AccountProvider table + full flow)
+- fix(frontend): fix import status poller auth (secureCookie + JWS re-sign)
+- fix(backend): accept DD/MM/YYYY date format for cookThisWeek
+- fix(backend): include name, email, image in GetSettings response
+- fix(backend): include recipeCount and accountProviders in admin user list
+- fix(db): add missing bannedAt column to User table
+- fix(db+frontend): add missing columns and media proxy route
+- chore: add missing package-lock files and ignore e2e test-results
+- fix(auth): pass secureCookie:true to getToken() to match HKDF salt
+- fix(auth): skip iss parameter check for Google OAuth provider
+- fix(auth): restore backend API auth for NextAuth v5 sessions
+- fix(helm): replace non-ASCII chars in values.yaml to fix Argo CD gRPC UTF-8 error
+- docs(agents): sync AGENTS.md with current architecture
+- chore(helm): bump chart version to 0.1.3
+- fix(helm): restore backend schema init and frontend auth secret
+- docs: rewrite README to reflect current monorepo architecture
+- chore(helm): tag helm-v0.1.2 release
+
 ## [Backend 1.2.1] — 2026-05-14
 
 _Backend service release_
