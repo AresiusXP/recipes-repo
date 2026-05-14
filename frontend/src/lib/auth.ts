@@ -57,6 +57,11 @@ function buildProviders() {
       Google({
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        // NextAuth v5 / oauth4webapi enforces RFC 9207 iss parameter validation
+        // because Google's OIDC discovery sets authorization_response_iss_parameter_supported=true,
+        // but Google does not reliably include iss in the callback URL.
+        // Using checks: ["pkce"] skips the iss check while keeping PKCE security.
+        checks: ["pkce"],
       })
     );
   }
