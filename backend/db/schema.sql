@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS "Notification" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ── AccountProvider ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS "AccountProvider" (
+  "userId"            TEXT        NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+  provider            TEXT        NOT NULL,
+  "providerAccountId" TEXT        NOT NULL,
+  "linkedAt"          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY ("userId", provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_accountprovider_userid ON "AccountProvider"("userId");
+
 -- ── RecipeImportJob ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "RecipeImportJob" (
   id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,

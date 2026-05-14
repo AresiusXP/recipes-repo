@@ -23,9 +23,11 @@ func NewAuthHandler(db *pgxpool.Pool) *AuthHandler {
 }
 
 type signInRequest struct {
-	Email string  `json:"email"`
-	Name  *string `json:"name"`
-	Image *string `json:"image"`
+	Email             string  `json:"email"`
+	Name              *string `json:"name"`
+	Image             *string `json:"image"`
+	Provider          string  `json:"provider"`
+	ProviderAccountID string  `json:"providerAccountId"`
 }
 
 type signInResponse struct {
@@ -99,6 +101,19 @@ func (h *AuthHandler) SignIn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("user signed in", "userId", userID)
+
+	// Record the OAuth provider linkage if provided.
+	if req.Provider != "" && req.ProviderAccountID != "" {
+		_, err := h.db.Exec(r.Context(), `
+			INSERT INTO "AccountProvider" ("userId", provider, "providerAccountId")
+			VALUES ($1, $2, $3)
+			ON CONFLICT ("userId", provider) DO UPDATE SET "providerAccountId" = EXCLUDED."providerAccountId"
+		`, userID, req.Provider, req.ProviderAccountID)
+		if err != nil {
+			slog.Error("failed to upsert account provider", "error", err, "userId", userID, "provider", req.Provider)
+			// Non-fatal: sign-in still succeeds
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(signInResponse{Allowed: true, UserID: userID})

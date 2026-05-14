@@ -92,7 +92,9 @@ function buildProviders() {
 async function notifyBackendSignIn(
   email: string,
   name: string | null | undefined,
-  image: string | null | undefined
+  image: string | null | undefined,
+  provider?: string,
+  providerAccountId?: string
 ): Promise<{ allowed: boolean; userId?: string; reason?: string }> {
   try {
     const res = await fetch(`${BACKEND_URL}/api/auth/signin`, {
@@ -103,7 +105,7 @@ async function notifyBackendSignIn(
           ? { "X-Internal-Secret": process.env.BACKEND_INTERNAL_SECRET }
           : {}),
       },
-      body: JSON.stringify({ email, name, image }),
+      body: JSON.stringify({ email, name, image, provider, providerAccountId }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -128,7 +130,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
   },
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       const email = user.email?.toLowerCase();
       if (!email) {
         log.warn("Sign-in rejected: no email provided by provider");
@@ -142,8 +144,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return "/login?error=RegistrationNotAllowed";
       }
 
-      // Notify backend (ban check, lastLoginAt, user creation)
-      const result = await notifyBackendSignIn(email, user.name, user.image);
+      // Notify backend (ban check, lastLoginAt, user creation, provider linkage)
+      const result = await notifyBackendSignIn(
+        email,
+        user.name,
+        user.image,
+        account?.provider,
+        account?.providerAccountId ?? undefined
+      );
       if (!result.allowed) {
         if (result.reason?.includes("banned")) {
           return "/login?error=AccountBanned";

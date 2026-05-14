@@ -103,6 +103,8 @@ func main() {
 		r.Get("/api/users/me/settings", userHandler.GetSettings)
 		r.Put("/api/users/me/settings", userHandler.UpdateSettings)
 		r.Post("/api/users/me/avatar", userHandler.UploadAvatar)
+		r.Get("/api/users/me/accounts", userHandler.GetLinkedAccounts)
+		r.Post("/api/users/me/accounts", userHandler.LinkAccount)
 		r.Get("/api/users/others", recipeHandler.GetOtherUsers)
 
 		// Notifications

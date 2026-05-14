@@ -147,3 +147,57 @@ func (h *UserHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 func writeFile(path string, data []byte) error {
 	return os.WriteFile(path, data, 0644)
 }
+
+// GetLinkedAccounts returns the OAuth providers linked to the current user.
+func (h *UserHandler) GetLinkedAccounts(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r)
+
+	rows, err := h.db.Query(r.Context(), `
+		SELECT provider, "providerAccountId" FROM "AccountProvider" WHERE "userId"=$1 ORDER BY "linkedAt"
+	`, userID)
+	if err != nil {
+		slog.Error("failed to list linked accounts", "error", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type linkedAccount struct {
+		Provider          string `json:"provider"`
+		ProviderAccountID string `json:"providerAccountId"`
+	}
+	accounts := []linkedAccount{}
+	for rows.Next() {
+		var a linkedAccount
+		rows.Scan(&a.Provider, &a.ProviderAccountID)
+		accounts = append(accounts, a)
+	}
+	jsonOK(w, accounts)
+}
+
+// LinkAccount records an OAuth provider linkage for the current user.
+func (h *UserHandler) LinkAccount(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r)
+
+	var body struct {
+		Provider          string `json:"provider"`
+		ProviderAccountID string `json:"providerAccountId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Provider == "" {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.Exec(r.Context(), `
+		INSERT INTO "AccountProvider" ("userId", provider, "providerAccountId")
+		VALUES ($1, $2, $3)
+		ON CONFLICT ("userId", provider) DO UPDATE SET "providerAccountId" = EXCLUDED."providerAccountId"
+	`, userID, body.Provider, body.ProviderAccountID)
+	if err != nil {
+		slog.Error("failed to link account", "error", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, map[string]bool{"success": true})
+}

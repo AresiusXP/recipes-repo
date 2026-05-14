@@ -7,18 +7,16 @@
 import {
   getUserSettings as apiGetUserSettings,
   updateUserSettings as apiUpdateUserSettings,
+  getLinkedAccounts as apiGetLinkedAccounts,
   type UserSettings,
+  type LinkedAccount,
 } from "@/lib/api-client";
 import { revalidatePath } from "next/cache";
 
 export type { UserSettings } from "@/lib/api-client";
+export type { LinkedAccount } from "@/lib/api-client";
 
 export type AutoTranslateLanguage = "en" | "nl" | "es" | null;
-
-export interface LinkedAccount {
-  provider: string;
-  providerAccountId: string;
-}
 
 export async function getUserSettingsAction(): Promise<UserSettings> {
   return apiGetUserSettings();
@@ -55,20 +53,8 @@ export async function getThemePreference(): Promise<string> {
  * Get linked OAuth accounts for the current user.
  */
 export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
-  const { auth } = await import("@/lib/auth");
-  const { redirect } = await import("next/navigation");
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-  const userId = (session as NonNullable<typeof session>).user!.id;
-
-  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
   try {
-    const res = await fetch(`${BACKEND_URL}/api/users/me/accounts`, {
-      headers: { Authorization: `Bearer ${userId}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    return res.json();
+    return await apiGetLinkedAccounts();
   } catch {
     return [];
   }

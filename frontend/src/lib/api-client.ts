@@ -437,3 +437,12 @@ export async function unbanUser(
     return { success: false, error: e instanceof Error ? e.message : "Failed to unban user" };
   }
 }
+
+export interface LinkedAccount {
+  provider: string;
+  providerAccountId: string;
+}
+
+export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
+  return backendFetch<LinkedAccount[]>("/api/users/me/accounts");
+}
