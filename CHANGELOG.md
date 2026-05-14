@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.3] — 2026-05-14
+
+_Chart-only release (appVersion unchanged)_
+
+- chore(helm): bump chart version to 0.1.3
+- fix(helm): restore backend schema init and frontend auth secret
+- docs: rewrite README to reflect current monorepo architecture
+
 ## [Helm 0.1.2] — 2026-05-14
 
 _Chart-only release (appVersion unchanged)_
