@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS "Recipe" (
   "prepTime"            TEXT,
   "cookTime"            TEXT,
   servings              TEXT,
+  "sharedByUserId"      TEXT        REFERENCES "User"(id) ON DELETE SET NULL,
+  "sharedFromRecipeId"  TEXT        REFERENCES "Recipe"(id) ON DELETE SET NULL,
   "createdAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -67,6 +69,8 @@ CREATE TABLE IF NOT EXISTS "Notification" (
   message     TEXT        NOT NULL,
   "recipeId"  TEXT        REFERENCES "Recipe"(id) ON DELETE SET NULL,
   "isRead"    BOOLEAN     NOT NULL DEFAULT false,
+  title       TEXT,
+  "senderUserId" TEXT     REFERENCES "User"(id) ON DELETE SET NULL,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
