@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.9.5] — 2026-05-14
+
+_Frontend service release_
+
+- feat: implement linked accounts (AccountProvider table + full flow)
+
 ## [Backend 1.2.0] — 2026-05-14
 
 _Backend service release_
