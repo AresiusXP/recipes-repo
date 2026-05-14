@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.2.0] — 2026-05-14
+
+_Backend service release_
+
+- feat: implement linked accounts (AccountProvider table + full flow)
+- fix(frontend): fix import status poller auth (secureCookie + JWS re-sign)
+
 ## [Frontend 0.9.4] — 2026-05-14
 
 _Frontend service release_

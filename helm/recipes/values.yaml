@@ -104,7 +104,7 @@ backend:
   image:
     repository: ghcr.io/aresiusxp/recipes-backend
     pullPolicy: IfNotPresent
-    tag: "1.1.3"
+    tag: "1.2.0"
   config:
     # URL of the scraper service (internal ClusterIP)
     scraperUrl: "http://recipes-scraper:3001"
