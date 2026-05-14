@@ -124,14 +124,16 @@ type Notification struct {
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 type AdminUser struct {
-	ID          string     `json:"id"`
-	Name        *string    `json:"name"`
-	Email       *string    `json:"email"`
-	Image       *string    `json:"image"`
-	IsBanned    bool       `json:"isBanned"`
-	BannedAt    *time.Time `json:"bannedAt"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	LastLoginAt *time.Time `json:"lastLoginAt"`
+	ID               string     `json:"id"`
+	Name             *string    `json:"name"`
+	Email            *string    `json:"email"`
+	Image            *string    `json:"image"`
+	IsBanned         bool       `json:"isBanned"`
+	BannedAt         *time.Time `json:"bannedAt"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	LastLoginAt      *time.Time `json:"lastLoginAt"`
+	RecipeCount      int        `json:"recipeCount"`
+	AccountProviders []string   `json:"accountProviders"`
 }
 
 // ─── Shareable user (for share picker) ───────────────────────────────────────

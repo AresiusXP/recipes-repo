@@ -51,9 +51,13 @@ func isAdminEmail(email string) bool {
 // ListUsers returns all users (admin only).
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(r.Context(), `
-		SELECT id, name, email, image, "isBanned", "bannedAt", "createdAt", "lastLoginAt"
-		FROM "User"
-		ORDER BY "createdAt" DESC
+		SELECT u.id, u.name, u.email, u.image, u."isBanned", u."bannedAt",
+		       u."createdAt", u."lastLoginAt",
+		       COUNT(r.id) AS recipe_count
+		FROM "User" u
+		LEFT JOIN "Recipe" r ON r."userId" = u.id
+		GROUP BY u.id
+		ORDER BY u."createdAt" DESC
 	`)
 	if err != nil {
 		slog.Error("failed to list users", "error", err)
@@ -65,7 +69,8 @@ func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	users := []models.AdminUser{}
 	for rows.Next() {
 		var u models.AdminUser
-		rows.Scan(&u.ID, &u.Name, &u.Email, &u.Image, &u.IsBanned, &u.BannedAt, &u.CreatedAt, &u.LastLoginAt)
+		rows.Scan(&u.ID, &u.Name, &u.Email, &u.Image, &u.IsBanned, &u.BannedAt, &u.CreatedAt, &u.LastLoginAt, &u.RecipeCount)
+		u.AccountProviders = []string{}
 		users = append(users, u)
 	}
 
