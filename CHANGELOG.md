@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.2.3] — 2026-05-15
+
+_Backend service release_
+
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+
 ## [Backend 1.2.2] — 2026-05-14
 
 _Backend service release_
