@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Scraper 1.1.0] — 2026-05-15
+
+_Scraper service release_
+
+- feat: support Instagram reel recipe imports
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+
 ## [Backend 1.3.0] — 2026-05-15
 
 _Backend service release_
