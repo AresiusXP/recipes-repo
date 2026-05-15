@@ -174,8 +174,10 @@ export default function NewRecipePage() {
       if (result.success && result.recipeId) {
         router.push(`/recipes/${result.recipeId}`);
       } else if (result.success && result.jobId) {
-        // Async import — redirect to a polling page
-        router.push(`/recipes/import/${result.jobId}`);
+        // Async import — redirect to a polling page, passing the source URL so
+        // the poller can show context-specific messages (e.g. for Instagram reels).
+        const importPath = `/recipes/import/${result.jobId}?url=${encodeURIComponent(url)}`;
+        router.push(importPath);
       } else if (result.siteBlocked) {
         setSiteBlocked(true);
         setError(result.error || "This website doesn't allow automated import.");

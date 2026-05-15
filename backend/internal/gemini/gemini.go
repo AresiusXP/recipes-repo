@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -54,6 +55,27 @@ type geminiContent struct {
 
 type geminiPart struct {
 	Text string `json:"text"`
+}
+
+// geminiMultimodalPart can carry either plain text or a file reference (video URL).
+// Exactly one of Text or FileData should be set.
+type geminiMultimodalPart struct {
+	Text     string            `json:"text,omitempty"`
+	FileData *geminiFileData   `json:"fileData,omitempty"`
+}
+
+type geminiFileData struct {
+	MimeType string `json:"mimeType"`
+	FileURI  string `json:"fileUri"`
+}
+
+type geminiMultimodalRequest struct {
+	Contents         []geminiMultimodalContent `json:"contents"`
+	GenerationConfig map[string]interface{}    `json:"generationConfig"`
+}
+
+type geminiMultimodalContent struct {
+	Parts []geminiMultimodalPart `json:"parts"`
 }
 
 type geminiResponse struct {
@@ -212,6 +234,154 @@ Page content:
 	return result, nil
 }
 
+// ExtractRecipeFromVideo sends a Gemini File API URI (uploaded by the scraper)
+// and caption text to Gemini as a multimodal prompt and returns structured recipe data.
+// The videoFileURI must be a valid Gemini files/ URI (e.g. from the File API upload).
+// Falls back to caption-only extraction if the video call fails.
+func ExtractRecipeFromVideo(ctx context.Context, videoFileURI, caption, sourceURL string, targetLanguage TargetLanguage) (*RecipeResult, error) {
+	log := slog.With("sourceURL", sourceURL)
+
+	// Truncate caption to avoid token waste (same limit as ExtractRecipe)
+	if len(caption) > 30000 {
+		caption = caption[:30000]
+	}
+
+	translationRule := "2. Keep the title, description, ingredient names, and step descriptions in their ORIGINAL language. Do NOT translate them. However, tags MUST always be in English regardless of the original language."
+	if targetLanguage != "" {
+		langName := languageNames[targetLanguage]
+		translationRule = fmt.Sprintf(
+			"2. ALL output (title, description, ingredient names, step descriptions) MUST be in %s. Translate everything from the original language into %s. Tags MUST always be in English regardless of the target language.",
+			langName, langName,
+		)
+	}
+
+	promptText := fmt.Sprintf(`You are a recipe extraction assistant. Extract the recipe from this Instagram reel video and its caption/description. Combine information from both the video content (spoken words, on-screen text, visual cues) and the caption text below.
+
+Return a JSON object with this exact structure:
+{
+  "title": "Recipe title",
+  "description": "A brief 1-2 sentence description of the dish",
+  "ingredients": ["ingredient 1 with quantity in metric units", "ingredient 2", ...],
+  "steps": ["Step 1 description", "Step 2 description", ...],
+  "tags": ["tag1", "tag2", ...],
+  "detectedLanguage": "ISO 639-1 language code of the original recipe content (e.g. en, es, fr, de, it, ja, zh, ko, pt, etc.)"
+}
+
+IMPORTANT RULES:
+1. Convert ALL imperial measurements to metric (cups to ml, oz to g, lbs to kg, °F to °C, inches to cm, etc.)
+%s
+3. Tags should be lowercase, relevant food categories (e.g., "vegetarian", "dessert", "italian", "quick", "gluten-free")
+4. Return ONLY valid JSON, no markdown code blocks, no explanation
+5. If you cannot extract a recipe, return: {"error": "Could not extract recipe from this content"}
+6. The "detectedLanguage" field must reflect the language of the ORIGINAL content before any translation, using an ISO 639-1 two-letter code
+
+Source URL: %s
+
+Caption/description:
+%s`, translationRule, sourceURL, caption)
+
+	key := apiKey()
+	if key == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY is not set")
+	}
+
+	model := modelName()
+	apiURL := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s",
+		model, key,
+	)
+
+	reqBody := geminiMultimodalRequest{
+		Contents: []geminiMultimodalContent{
+			{
+				Parts: []geminiMultimodalPart{
+					{
+						FileData: &geminiFileData{
+							MimeType: "video/mp4",
+							FileURI:  videoFileURI,
+						},
+					},
+					{Text: promptText},
+				},
+			},
+		},
+		GenerationConfig: map[string]interface{}{
+			"responseMimeType": "application/json",
+		},
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal video request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create video request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := geminiHTTPClient.Do(req)
+	if err != nil {
+		log.Warn("gemini video generateContent failed, falling back to caption-only", "err", err)
+		return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Warn("gemini video extraction failed, falling back to caption-only",
+			"status", resp.StatusCode, "body", string(b))
+		return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+	}
+
+	var gemResp geminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gemResp); err != nil {
+		log.Warn("failed to decode gemini video response, falling back to caption-only", "err", err)
+		return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+	}
+
+	if len(gemResp.Candidates) == 0 || len(gemResp.Candidates[0].Content.Parts) == 0 {
+		log.Warn("gemini video extraction returned empty candidates, falling back to caption-only")
+		return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+	}
+
+	text := gemResp.Candidates[0].Content.Parts[0].Text
+	text = strings.TrimPrefix(text, "```json\n")
+	text = strings.TrimPrefix(text, "```\n")
+	text = strings.TrimSuffix(text, "\n```")
+	text = strings.TrimSpace(text)
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		log.Warn("gemini video extraction returned malformed JSON, falling back to caption-only", "err", err)
+		return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+	}
+
+	if errMsg, ok := parsed["error"].(string); ok {
+		if caption != "" {
+			log.Warn("gemini video extraction returned error, falling back to caption-only", "geminiError", errMsg)
+			return ExtractRecipe(ctx, caption, sourceURL, targetLanguage)
+		}
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
+	result := &RecipeResult{
+		Title:            stringOrDefault(parsed["title"], "Untitled Recipe"),
+		Description:      stringOrDefault(parsed["description"], ""),
+		DetectedLanguage: strings.ToLower(strings.TrimSpace(stringOrDefault(parsed["detectedLanguage"], "en"))),
+	}
+	if len(result.DetectedLanguage) > 2 {
+		result.DetectedLanguage = result.DetectedLanguage[:2]
+	}
+
+	result.Ingredients = stringSlice(parsed["ingredients"])
+	result.Steps = stringSlice(parsed["steps"])
+	result.Tags = lowercaseSlice(stringSlice(parsed["tags"]))
+
+	log.Info("gemini video extraction succeeded")
+	return result, nil
+}
 // TranslateRecipe translates an existing recipe into the target language.
 func TranslateRecipe(ctx context.Context, recipe RecipeResult, targetLanguage TargetLanguage) (*RecipeResult, error) {
 	langName := languageNames[targetLanguage]

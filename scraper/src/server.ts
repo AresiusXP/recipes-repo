@@ -18,6 +18,7 @@ const queue = new JobQueue(async (url: string) => {
     title: result.title,
     content: result.content,
     imageUrl: result.imageUrl,
+    videoUrl: result.videoUrl ?? null,
     usedBrowserFallback: result.usedBrowserFallback,
   };
 });

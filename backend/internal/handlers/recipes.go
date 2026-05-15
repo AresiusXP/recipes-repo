@@ -395,8 +395,14 @@ func (h *RecipeHandler) processImportJob(jobID, userID, recipeURL string) {
 		targetLang = gemini.TargetLanguage(*autoTranslate)
 	}
 
-	// Extract recipe with Gemini
-	recipe, err := gemini.ExtractRecipe(ctx, scraperResult.Content, recipeURL, targetLang)
+	// Extract recipe with Gemini — use multimodal video extraction for Instagram reels
+	var recipe *gemini.RecipeResult
+	var err error
+	if scraperResult.VideoURL != nil && *scraperResult.VideoURL != "" {
+		recipe, err = gemini.ExtractRecipeFromVideo(ctx, *scraperResult.VideoURL, scraperResult.Content, recipeURL, targetLang)
+	} else {
+		recipe, err = gemini.ExtractRecipe(ctx, scraperResult.Content, recipeURL, targetLang)
+	}
 	if err != nil {
 		log.Error("gemini extraction failed", "error", err)
 		h.failJob(ctx, jobID, fmt.Sprintf("Could not extract recipe: %s", err.Error()))

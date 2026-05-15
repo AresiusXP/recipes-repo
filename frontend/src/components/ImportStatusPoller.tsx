@@ -13,6 +13,7 @@ interface ImportJobStatus {
 
 interface ImportStatusPollerProps {
   jobId: string;
+  isInstagram?: boolean;
   onRetry?: () => void;
 }
 
@@ -24,13 +25,23 @@ const STATUS_MESSAGES: Record<ImportJobStatus["status"], string> = {
   failed: "Import failed",
 };
 
+const INSTAGRAM_STATUS_MESSAGES: Record<ImportJobStatus["status"], string> = {
+  pending: "Queued…",
+  scraping: "Downloading Instagram reel…",
+  extracting: "Analysing video and extracting recipe with AI…",
+  done: "Done!",
+  failed: "Import failed",
+};
+
 const POLL_INTERVAL_MS = 2500;
 
-export function ImportStatusPoller({ jobId, onRetry }: ImportStatusPollerProps) {
+export function ImportStatusPoller({ jobId, isInstagram = false, onRetry }: ImportStatusPollerProps) {
   const router = useRouter();
   const [status, setStatus] = useState<ImportJobStatus["status"]>("pending");
   const [error, setError] = useState<string | null>(null);
   const [dots, setDots] = useState("");
+
+  const messages = isInstagram ? INSTAGRAM_STATUS_MESSAGES : STATUS_MESSAGES;
 
   // Animated dots for in-progress states
   useEffect(() => {
@@ -78,7 +89,7 @@ export function ImportStatusPoller({ jobId, onRetry }: ImportStatusPollerProps) 
         <div className="flex items-center gap-3">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           <span className="text-sm text-zinc-600 dark:text-zinc-400">
-            {STATUS_MESSAGES[status]}{dots}
+            {messages[status]}{dots}
           </span>
         </div>
       )}
@@ -111,7 +122,7 @@ export function ImportStatusPoller({ jobId, onRetry }: ImportStatusPollerProps) 
                     : "text-zinc-400 dark:text-zinc-600"
                 }`}
               >
-                {STATUS_MESSAGES[step]}
+                {messages[step]}
               </span>
             </div>
           );

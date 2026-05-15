@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { JobQueue } from "../queue.js";
 
+/** Flush all pending microtasks and promise callbacks. */
+async function flushPromises(): Promise<void> {
+  // Multiple rounds to handle chained promises
+  for (let i = 0; i < 10; i++) {
+    await Promise.resolve();
+  }
+}
+
 describe("JobQueue", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -28,9 +36,7 @@ describe("JobQueue", () => {
     q.enqueue("job-2", "https://example.com/recipe");
 
     // Allow the async worker to complete
-    await vi.runAllTimersAsync();
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
+    await flushPromises();
 
     const job = q.get("job-2");
     expect(job?.status).toBe("done");
@@ -43,9 +49,7 @@ describe("JobQueue", () => {
     const q = new JobQueue(worker);
     q.enqueue("job-3", "https://example.com/bad");
 
-    await vi.runAllTimersAsync();
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
+    await flushPromises();
 
     const job = q.get("job-3");
     expect(job?.status).toBe("failed");
@@ -66,9 +70,7 @@ describe("JobQueue", () => {
     const q = new JobQueue(worker);
     q.enqueue("job-4", "https://example.com");
 
-    await vi.runAllTimersAsync();
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
+    await flushPromises();
 
     // Advance time past the prune threshold (1 hour)
     vi.advanceTimersByTime(61 * 60 * 1000);
