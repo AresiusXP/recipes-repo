@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -120,6 +121,19 @@ func (h *RecipeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate SourceURL if provided to prevent SSRF via the Translate handler
+	if req.SourceURL != nil && *req.SourceURL != "" {
+		if _, err := neturl.ParseRequestURI(*req.SourceURL); err != nil ||
+			(!strings.HasPrefix(*req.SourceURL, "http://") && !strings.HasPrefix(*req.SourceURL, "https://")) {
+			jsonError(w, "Invalid source URL", http.StatusBadRequest)
+			return
+		}
+		if isPrivateOrLocalURL(*req.SourceURL) {
+			jsonError(w, "URL points to a private or internal network", http.StatusBadRequest)
+			return
+		}
+	}
+
 	ingredientsJSON, _ := json.Marshal(req.Ingredients)
 	stepsJSON, _ := json.Marshal(req.Steps)
 
@@ -225,6 +239,11 @@ func (h *RecipeHandler) ImportFromURL(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := neturl.ParseRequestURI(req.URL); err != nil || (!strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://")) {
 		jsonError(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	if isPrivateOrLocalURL(req.URL) {
+		jsonError(w, "URL points to a private or internal network", http.StatusBadRequest)
 		return
 	}
 
@@ -1053,8 +1072,107 @@ func isLocalMediaPath(p string) bool {
 	return strings.HasPrefix(p, prefix)
 }
 
+// isPrivateOrLocalURL returns true if the URL resolves to a private, loopback,
+// or link-local address. It is used to prevent SSRF attacks.
+func isPrivateOrLocalURL(urlStr string) bool {
+	u, err := neturl.Parse(urlStr)
+	if err != nil {
+		return true // reject invalid URLs
+	}
+
+	hostname := u.Hostname()
+	if hostname == "" {
+		return true
+	}
+
+	// Block localhost by name
+	if strings.EqualFold(hostname, "localhost") {
+		return true
+	}
+
+	// If the hostname is already an IP literal, check it directly
+	if ip := net.ParseIP(hostname); ip != nil {
+		return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+	}
+
+	// Resolve hostname with a short timeout to prevent DNS-based DoS
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resolver := &net.Resolver{}
+	ips, err := resolver.LookupIP(ctx, "ip", hostname)
+	if err != nil {
+		return true // fail-closed: block if DNS resolution fails
+	}
+
+	// Block if ANY resolved IP is private/internal (prevents DNS rebinding)
+	for _, ip := range ips {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return true
+		}
+	}
+
+	return false
+}
+
 func downloadImage(imageURL string) string {
-	client := &http.Client{Timeout: 30 * time.Second}
+	if isPrivateOrLocalURL(imageURL) {
+		return ""
+	}
+
+	// safeDialer validates the resolved IP at connection time, defeating DNS rebinding.
+	// It resolves the hostname itself, validates all IPs, then dials the first safe IP directly.
+	safeDialer := &net.Dialer{Timeout: 10 * time.Second}
+	safeDialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address: %w", err)
+		}
+
+		// If addr is already an IP literal (common when called from Transport after DNS),
+		// validate it directly.
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+				return nil, fmt.Errorf("connection to private/local IP blocked: %s", ip)
+			}
+			return safeDialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+		}
+
+		// Resolve the hostname ourselves so we can validate and then dial a specific IP,
+		// preventing a second DNS lookup (and thus DNS rebinding) by the dialer.
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+		if err != nil {
+			return nil, fmt.Errorf("DNS resolution failed: %w", err)
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("no IPs resolved for host: %s", host)
+		}
+		for _, ip := range ips {
+			if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+				return nil, fmt.Errorf("connection to private/local IP blocked: %s", ip)
+			}
+		}
+		// Dial the first validated IP directly to prevent a second DNS lookup.
+		return safeDialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+	}
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		// Block redirects to private/local URLs
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if isPrivateOrLocalURL(req.URL.String()) {
+				return fmt.Errorf("redirect to private/local URL blocked")
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+		// Validate the IP at dial time to defeat DNS rebinding
+		Transport: &http.Transport{
+			DialContext: safeDialContext,
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, imageURL, nil)
 	if err != nil {
 		return ""
