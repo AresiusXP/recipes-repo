@@ -15,7 +15,7 @@ frontend:
   image:
     repository: ghcr.io/aresiusxp/recipes-frontend
     pullPolicy: IfNotPresent
-    tag: "0.9.5"
+    tag: "0.10.0"
   config:
     # Comma-separated list of email addresses allowed to register.
     # Leave empty to allow anyone to register (open registration).

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.10.0] — 2026-05-15
+
+_Frontend service release_
+
+- feat: support Instagram reel recipe imports
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+- fix(backend): don't overwrite name/image on subsequent OAuth sign-ins
+
 ## [Backend 1.2.3] — 2026-05-15
 
 _Backend service release_
