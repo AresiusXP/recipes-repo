@@ -23,10 +23,13 @@ ENV HOME=/home/scraper
 RUN groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid nodejs --create-home scraper
 
-# Install curl (primary fetch strategy) and Chromium (Playwright browser fallback)
+# Install curl (primary fetch strategy), Chromium (Playwright browser fallback),
+# ffmpeg (needed by yt-dlp to mux DASH video+audio streams into a single mp4),
+# and yt-dlp standalone binary (Instagram reel extraction — no Python required)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    ffmpeg \
     chromium \
     fonts-liberation \
     libasound2 \
@@ -46,7 +49,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 \
     libxshmfence1 \
     xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH="$(dpkg --print-architecture)" \
+    && if [ "$ARCH" = "amd64" ]; then YT_DLP_BIN="yt-dlp_linux"; \
+       elif [ "$ARCH" = "arm64" ]; then YT_DLP_BIN="yt-dlp_linux_aarch64"; \
+       else YT_DLP_BIN="yt-dlp_linux"; fi \
+    && curl -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YT_DLP_BIN}" \
+       -o /usr/local/bin/yt-dlp \
+    && chmod +x /usr/local/bin/yt-dlp
 
 # Tell Playwright where to find the system Chromium binary.
 ENV PLAYWRIGHT_EXECUTABLE_PATH="/usr/bin/chromium"

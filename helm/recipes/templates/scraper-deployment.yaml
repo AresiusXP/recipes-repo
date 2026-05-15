@@ -41,6 +41,11 @@ spec:
               value: {{ .Values.scraper.config.logLevel | quote }}
             - name: PLAYWRIGHT_EXECUTABLE_PATH
               value: {{ .Values.scraper.config.playwrightExecutablePath | quote }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.secrets.existingSecret }}
+                  key: {{ .Values.backend.secrets.keys.geminiApiKey }}
           {{- with .Values.scraper.probes.liveness }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}

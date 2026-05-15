@@ -45,10 +45,11 @@ type enqueueResponse struct {
 
 // JobResult holds the result of a completed scrape job.
 type JobResult struct {
-	Title              string  `json:"title"`
-	Content            string  `json:"content"`
-	ImageURL           *string `json:"imageUrl"`
-	UsedBrowserFallback bool   `json:"usedBrowserFallback"`
+	Title               string  `json:"title"`
+	Content             string  `json:"content"`
+	ImageURL            *string `json:"imageUrl"`
+	VideoURL            *string `json:"videoUrl"`
+	UsedBrowserFallback bool    `json:"usedBrowserFallback"`
 }
 
 // JobStatus holds the current state of a scrape job.

@@ -11,6 +11,7 @@ export interface ScrapeResult {
   title: string;
   content: string;
   imageUrl: string | null;
+  videoUrl?: string | null;
   usedBrowserFallback?: boolean;
 }
 
@@ -54,7 +55,8 @@ export class JobQueue {
     this.jobs.set(jobId, job);
     this.queue.push(jobId);
     log.info({ jobId, url }, "Job enqueued");
-    this.processNext();
+    // Defer processNext so the caller sees status "queued" on the returned job
+    Promise.resolve().then(() => this.processNext());
     return job;
   }
 
@@ -91,8 +93,8 @@ export class JobQueue {
       log.warn({ jobId, error: job.error }, "Job failed");
     } finally {
       this.running = false;
-      // Process next job after a short yield
-      setImmediate(() => this.processNext());
+      // Process next job via microtask (works correctly with fake timers in tests)
+      Promise.resolve().then(() => this.processNext());
     }
   }
 

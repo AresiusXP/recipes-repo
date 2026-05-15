@@ -1,5 +1,9 @@
 import * as cheerio from "cheerio";
 import { execFile } from "node:child_process";
+import { createReadStream, statSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import pino from "pino";
 
@@ -14,6 +18,8 @@ export interface ScrapedPage {
   title: string;
   content: string;
   imageUrl: string | null;
+  /** Direct CDN video URL, populated for Instagram reels via yt-dlp. */
+  videoUrl?: string | null;
   /** True when the browser fallback (Playwright) was used instead of curl. */
   usedBrowserFallback?: boolean;
 }
@@ -574,10 +580,204 @@ function extractFromHtml(html: string): { title: string; content: string; imageU
  *    fingerprint but allows a real browser through. If the browser also fails or is
  *    blocked, throw SiteBlockedError.
  */
+// ─── Instagram reel extraction via yt-dlp ───
+
+/**
+ * Returns true if the URL is an Instagram reel or video post.
+ */
+function isInstagramReelUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.hostname === "www.instagram.com" ||
+        parsed.hostname === "instagram.com") &&
+      (parsed.pathname.includes("/reel/") ||
+        parsed.pathname.includes("/reels/") ||
+        parsed.pathname.includes("/p/"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * yt-dlp metadata shape (subset of fields we care about).
+ */
+interface YtDlpInfo {
+  title?: string;
+  description?: string;
+  thumbnail?: string;
+}
+
+/**
+ * Uploads a local video file to the Gemini File API.
+ * Returns the Gemini file URI (e.g. "https://generativelanguage.googleapis.com/v1beta/files/abc123")
+ * which can be used directly in a generateContent multimodal request.
+ *
+ * Throws if GEMINI_API_KEY is not set or the upload fails.
+ */
+async function uploadVideoToGemini(filePath: string, log: pino.Logger): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set — cannot upload video to Gemini");
+  }
+
+  const fileStats = statSync(filePath);
+  const fileSizeBytes = fileStats.size;
+  const mimeType = "video/mp4";
+
+  log.info({ filePath, fileSizeBytes }, "Uploading video to Gemini File API");
+
+  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
+
+  // Use a raw upload (single request) for files up to ~200 MB
+  const fileStream = createReadStream(filePath);
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": mimeType,
+      "X-Goog-Upload-Protocol": "raw",
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Header-Content-Length": String(fileSizeBytes),
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "Content-Length": String(fileSizeBytes),
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: fileStream as any,
+    duplex: "half",
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Gemini File API upload failed (${response.status}): ${body.slice(0, 200)}`);
+  }
+
+  const uploadResult = await response.json() as {
+    file: { name: string; uri: string; state: string };
+  };
+
+  let fileUri = uploadResult.file.uri;
+  const fileName = uploadResult.file.name;
+
+  // Wait for the file to become ACTIVE (Gemini processes it asynchronously)
+  if (uploadResult.file.state !== "ACTIVE") {
+    log.info({ fileName, state: uploadResult.file.state }, "Waiting for Gemini file to become ACTIVE");
+    fileUri = await waitForGeminiFileActive(fileName, apiKey, log);
+  }
+
+  log.info({ fileUri }, "Gemini file upload complete and ACTIVE");
+  return fileUri;
+}
+
+/**
+ * Polls the Gemini File API until the file reaches ACTIVE state.
+ */
+async function waitForGeminiFileActive(fileName: string, apiKey: string, log: pino.Logger): Promise<string> {
+  const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`;
+
+  for (let i = 0; i < 20; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    const resp = await fetch(pollUrl);
+    if (!resp.ok) continue;
+
+    const data = await resp.json() as { name: string; uri: string; state: string };
+    log.debug({ state: data.state, attempt: i + 1 }, "Gemini file state poll");
+
+    if (data.state === "ACTIVE") return data.uri;
+    if (data.state === "FAILED") throw new Error("Gemini file processing failed");
+  }
+
+  throw new Error("Gemini file did not become ACTIVE within timeout");
+}
+
+/**
+ * Extracts an Instagram reel's metadata (caption, thumbnail) using yt-dlp,
+ * downloads and muxes the video into a temp mp4 file, uploads it to the
+ * Gemini File API, and returns the Gemini file URI as `videoUrl`.
+ *
+ * If GEMINI_API_KEY is not set or the upload fails, falls back to caption-only
+ * (videoUrl will be null).
+ */
+async function scrapeInstagramReel(url: string): Promise<ScrapedPage> {
+  const log = logger.child({ component: "instagram", url });
+  log.info("Extracting Instagram reel via yt-dlp");
+
+  // Step 1: get metadata (title, caption, thumbnail) without downloading video
+  let raw: string;
+  try {
+    const { stdout } = await execFileAsync("yt-dlp", [
+      "--dump-json",
+      "--no-download",
+      "--no-playlist",
+      url,
+    ]);
+    raw = stdout;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.error({ err: msg }, "yt-dlp metadata extraction failed");
+    throw new Error(`yt-dlp failed to extract Instagram reel: ${msg}`);
+  }
+
+  let info: YtDlpInfo;
+  try {
+    info = JSON.parse(raw) as YtDlpInfo;
+  } catch {
+    throw new Error("yt-dlp returned invalid JSON");
+  }
+
+  const title = info.title ?? "Instagram Reel";
+  const content = info.description ?? "";
+  const imageUrl = info.thumbnail ?? null;
+
+  log.info({ title, hasCaption: content.length > 0 }, "Instagram reel metadata extracted");
+
+  // Step 2: download + mux video to a temp file, then upload to Gemini File API
+  let videoUrl: string | null = null;
+  const tmpDir = await mkdtemp(join(tmpdir(), "recipe-reel-"));
+  const tmpFile = join(tmpDir, "video.mp4");
+
+  try {
+    log.info({ tmpFile }, "Downloading and muxing Instagram reel via yt-dlp");
+
+    // yt-dlp automatically selects best video+audio and muxes via ffmpeg
+    await execFileAsync("yt-dlp", [
+      "--no-playlist",
+      "--format", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+      "--merge-output-format", "mp4",
+      "--output", tmpFile,
+      url,
+    ], { timeout: 120_000 });
+
+    videoUrl = await uploadVideoToGemini(tmpFile, log);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn({ err: msg }, "Video download/upload failed — will use caption-only extraction");
+    videoUrl = null;
+  } finally {
+    // Clean up temp directory and all its contents regardless of success/failure
+    rm(tmpDir, { recursive: true, force: true }).catch(() => {/* ignore */});
+  }
+
+  return {
+    title,
+    content,
+    imageUrl,
+    videoUrl,
+    usedBrowserFallback: false,
+  };
+}
+
 export async function scrapePage(url: string): Promise<ScrapedPage> {
   const log = logger.child({ component: "scraper", url });
 
   log.debug("Fetching page");
+
+  // ── Instagram reels: use yt-dlp instead of curl/Playwright ──
+  if (isInstagramReelUrl(url)) {
+    return scrapeInstagramReel(url);
+  }
 
   // ── Step 1: try curl ──
   let html: string;
