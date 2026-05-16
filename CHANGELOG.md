@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.4.0] — 2026-05-16
+
+_Backend service release_
+
+- feat: support Instagram reel recipe imports
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+- Set package-ecosystem to 'gomod' in dependabot config
+
 ## [Frontend 0.11.0] — 2026-05-16
 
 _Frontend service release_
