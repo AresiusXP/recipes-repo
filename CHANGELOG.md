@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Scraper 1.2.0] — 2026-05-16
+
+_Scraper service release_
+
+- feat: support Instagram reel recipe imports
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+- Set package-ecosystem to 'gomod' in dependabot config
+
 ## [Scraper 1.1.0] — 2026-05-15
 
 _Scraper service release_
