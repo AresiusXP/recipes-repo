@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.2] — 2026-05-17
+
+_Frontend service release_
+
+- build(frontend): patch Next.js and PostCSS vulnerabilities
+
 ## [Frontend 0.11.1] — 2026-05-16
 
 _Frontend service release_
