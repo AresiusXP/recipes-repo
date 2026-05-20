@@ -13,6 +13,7 @@ import {
   deleteRecipe as apiDeleteRecipe,
   importRecipeFromUrl as apiImportRecipeFromUrl,
   importRecipeFromText as apiImportRecipeFromText,
+  uploadRecipeImage,
   getImportJobStatus,
   translateRecipe as apiTranslateRecipe,
   shareRecipe as apiShareRecipe,
@@ -67,10 +68,33 @@ export async function createRecipeAction(
 export async function updateRecipeAction(
   id: string,
   data: RecipeFormData,
-  _imageAction?: string,
-  _imageFile?: File
+  imageAction?: string,
+  imageFile?: File
 ): Promise<{ success: boolean; error?: string }> {
-  const result = await apiUpdateRecipe(id, data);
+  let resolvedData = data;
+
+  if (imageAction === "replace" && imageFile) {
+    // Upload the new image first, then include the returned path in the update.
+    try {
+      const { path } = await uploadRecipeImage(imageFile);
+      resolvedData = { ...data, imagePath: path };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to upload image",
+      };
+    }
+  } else if (imageAction === "remove") {
+    // Explicitly clear the image. Send empty string as sentinel — the backend
+    // treats "" as "set imagePath to null" (remove), while omitting the field
+    // entirely means "leave unchanged". JSON null and absent are indistinguishable
+    // in Go's *string, so we use "" as the remove sentinel.
+    resolvedData = { ...data, imagePath: "" };
+  }
+  // imageAction === "keep" (or undefined): leave imagePath out of the payload
+  // so the backend leaves the existing value unchanged.
+
+  const result = await apiUpdateRecipe(id, resolvedData);
   if (result.success) {
     revalidatePath(`/recipes/${id}`);
     revalidatePath("/recipes");
@@ -164,13 +188,27 @@ export const importRecipeFromUrl = importRecipeFromUrlAction;
 /**
  * Import a recipe from plain text (manual import).
  * Sends the text to the backend for Gemini extraction.
- * Extra args (sourceUrl, imageFile) are accepted for backward compatibility
- * but the backend handles them separately.
+ * If an imageFile is provided, it is uploaded first and the resulting path
+ * is passed to the backend so it can be stored on the created recipe.
  */
 export async function importRecipeFromText(
   text: string,
   _sourceUrl?: string,
-  _imageFile?: File | null
+  imageFile?: File | null
 ): Promise<ImportResult> {
-  return apiImportRecipeFromText(text);
+  let imagePath: string | null = null;
+
+  if (imageFile) {
+    try {
+      const { path } = await uploadRecipeImage(imageFile);
+      imagePath = path;
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to upload image",
+      };
+    }
+  }
+
+  return apiImportRecipeFromText(text, imagePath);
 }
