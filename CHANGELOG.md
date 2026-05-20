@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.3] — 2026-05-20
+
+_Frontend service release_
+
+- fix(frontend,backend): persist uploaded recipe images
+
 ## [Frontend 0.11.2] — 2026-05-17
 
 _Frontend service release_
