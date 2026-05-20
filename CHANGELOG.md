@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.4.1] — 2026-05-20
+
+_Backend service release_
+
+- fix(frontend,backend): persist uploaded recipe images
+- build(frontend): patch Next.js and PostCSS vulnerabilities
+
 ## [Frontend 0.11.3] — 2026-05-20
 
 _Frontend service release_
