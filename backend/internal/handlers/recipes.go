@@ -180,15 +180,40 @@ func (h *RecipeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	ingredientsJSON, _ := json.Marshal(req.Ingredients)
 	stepsJSON, _ := json.Marshal(req.Steps)
 
-	_, err = h.db.Exec(r.Context(), `
-		UPDATE "Recipe"
-		SET title=$1, description=$2, ingredients=$3, steps=$4, "updatedAt"=NOW()
-		WHERE id=$5 AND "userId"=$6
-	`, req.Title, req.Description, string(ingredientsJSON), string(stepsJSON), recipeID, userID)
-	if err != nil {
-		slog.Error("failed to update recipe", "error", err)
+	var updateErr error
+	var oldImagePath *string
+	var newImagePath *string
+
+	if req.ImagePath != nil {
+		// Caller explicitly set imagePath (new upload, or removal — empty string means null).
+		if *req.ImagePath != "" {
+			newImagePath = req.ImagePath
+		}
+		// Fetch old path before updating so we can clean up the file after success.
+		_ = h.db.QueryRow(r.Context(), `SELECT "imagePath" FROM "Recipe" WHERE id=$1`, recipeID).Scan(&oldImagePath)
+
+		_, updateErr = h.db.Exec(r.Context(), `
+			UPDATE "Recipe"
+			SET title=$1, description=$2, ingredients=$3, steps=$4, "imagePath"=$5, "updatedAt"=NOW()
+			WHERE id=$6 AND "userId"=$7
+		`, req.Title, req.Description, string(ingredientsJSON), string(stepsJSON), newImagePath, recipeID, userID)
+	} else {
+		_, updateErr = h.db.Exec(r.Context(), `
+			UPDATE "Recipe"
+			SET title=$1, description=$2, ingredients=$3, steps=$4, "updatedAt"=NOW()
+			WHERE id=$5 AND "userId"=$6
+		`, req.Title, req.Description, string(ingredientsJSON), string(stepsJSON), recipeID, userID)
+	}
+	if updateErr != nil {
+		slog.Error("failed to update recipe", "error", updateErr)
 		jsonError(w, "Failed to update recipe", http.StatusInternalServerError)
 		return
+	}
+
+	// Delete the old local image file only after the DB update succeeded,
+	// and only if no other recipe still references it.
+	if oldImagePath != nil && isLocalMediaPath(*oldImagePath) && (newImagePath == nil || *newImagePath != *oldImagePath) {
+		safeDeleteMediaFile(r.Context(), h.db, *oldImagePath)
 	}
 
 	if err := h.upsertTags(r.Context(), recipeID, req.Tags); err != nil {
@@ -218,9 +243,9 @@ func (h *RecipeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete image file if local
+	// Delete image file if local and not referenced by any other recipe
 	if imagePath != nil && isLocalMediaPath(*imagePath) {
-		deleteMediaFile(*imagePath)
+		safeDeleteMediaFile(r.Context(), h.db, *imagePath)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -289,7 +314,8 @@ func (h *RecipeHandler) ImportFromText(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r)
 
 	var req struct {
-		Text string `json:"text"`
+		Text      string  `json:"text"`
+		ImagePath *string `json:"imagePath"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Text) == "" {
 		jsonError(w, "Invalid request body: text is required", http.StatusBadRequest)
@@ -310,7 +336,7 @@ func (h *RecipeHandler) ImportFromText(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start background goroutine to extract recipe with Gemini
-	go h.processTextImportJob(jobID, userID, req.Text)
+	go h.processTextImportJob(jobID, userID, req.Text, req.ImagePath)
 
 	w.WriteHeader(http.StatusAccepted)
 	jsonOK(w, models.ImportJobResponse{JobID: jobID, Status: "extracting"})
@@ -499,7 +525,7 @@ func (h *RecipeHandler) failJob(ctx context.Context, jobID, errMsg string) {
 }
 
 // processTextImportJob extracts a recipe from raw text using Gemini (no scraping).
-func (h *RecipeHandler) processTextImportJob(jobID, userID, text string) {
+func (h *RecipeHandler) processTextImportJob(jobID, userID, text string, imagePath *string) {
 	ctx := context.Background()
 
 	// Get user's auto-translate preference
@@ -516,6 +542,10 @@ func (h *RecipeHandler) processTextImportJob(jobID, userID, text string) {
 	if err != nil {
 		slog.Error("gemini extraction failed for text import", "error", err, "jobId", jobID)
 		h.failJob(ctx, jobID, fmt.Sprintf("Failed to extract recipe: %s", err.Error()))
+		// Clean up the pre-uploaded image since the recipe won't be created.
+		if imagePath != nil && isLocalMediaPath(*imagePath) {
+			deleteMediaFile(*imagePath)
+		}
 		return
 	}
 
@@ -536,6 +566,9 @@ func (h *RecipeHandler) processTextImportJob(jobID, userID, text string) {
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
 		h.failJob(ctx, jobID, "Database error")
+		if imagePath != nil && isLocalMediaPath(*imagePath) {
+			deleteMediaFile(*imagePath)
+		}
 		return
 	}
 	defer tx.Rollback(ctx)
@@ -545,7 +578,7 @@ func (h *RecipeHandler) processTextImportJob(jobID, userID, text string) {
 		  "rawContent", "sourceLanguage", "isTranslatedToEnglish", "translatedLanguage",
 		  "hasBeenTranslated", "userId", "createdAt", "updatedAt")
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
-	`, recipeID, recipe.Title, recipe.Description, nil, nil,
+	`, recipeID, recipe.Title, recipe.Description, nil, imagePath,
 		string(ingredientsJSON), string(stepsJSON),
 		text[:min(len(text), 50000)],
 		recipe.DetectedLanguage, isEnglish || isTranslatedToEnglish,
@@ -553,12 +586,18 @@ func (h *RecipeHandler) processTextImportJob(jobID, userID, text string) {
 	if err != nil {
 		slog.Error("failed to save text-imported recipe", "error", err, "jobId", jobID)
 		h.failJob(ctx, jobID, "Failed to save recipe")
+		if imagePath != nil && isLocalMediaPath(*imagePath) {
+			deleteMediaFile(*imagePath)
+		}
 		return
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		slog.Error("failed to commit text import transaction", "error", err, "jobId", jobID)
 		h.failJob(ctx, jobID, "Failed to save recipe")
+		if imagePath != nil && isLocalMediaPath(*imagePath) {
+			deleteMediaFile(*imagePath)
+		}
 		return
 	}
 
@@ -1231,15 +1270,29 @@ func downloadImage(imageURL string) string {
 
 func deleteMediaFile(publicPath string) {
 	filename := filepath.Base(publicPath)
+	// Safety: never delete the directory itself or special names
+	if filename == "." || filename == ".." || filename == "/" || filename == "" {
+		return
+	}
 	dir := mediaDir()
 	fullPath := filepath.Join(dir, filename)
 	// Security: ensure path is inside media dir
 	absDir, _ := filepath.Abs(dir)
 	absPath, _ := filepath.Abs(fullPath)
-	if !strings.HasPrefix(absPath, absDir) {
+	if !strings.HasPrefix(absPath, absDir+string(filepath.Separator)) {
 		return
 	}
 	os.Remove(fullPath)
+}
+
+// safeDeleteMediaFile deletes a local media file only if no other Recipe row
+// still references it, preventing accidental deletion of shared images.
+func safeDeleteMediaFile(ctx context.Context, db *pgxpool.Pool, publicPath string) {
+	var count int
+	if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM "Recipe" WHERE "imagePath"=$1`, publicPath).Scan(&count); err != nil || count > 0 {
+		return
+	}
+	deleteMediaFile(publicPath)
 }
 
 func duplicateMediaFile(publicPath string) string {

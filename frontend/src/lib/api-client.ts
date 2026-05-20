@@ -195,6 +195,36 @@ export interface AdminUser {
   accountProviders: string[];
 }
 
+// ─── Media upload API ─────────────────────────────────────────────────────────
+
+/**
+ * Uploads an image file to the backend media endpoint.
+ * Returns the public path (e.g. "/media/<uuid>.jpg") to store on the recipe.
+ */
+export async function uploadRecipeImage(file: File): Promise<{ path: string }> {
+  const token = await getAuthToken();
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  const res = await fetch(`${BACKEND_URL}/api/media`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Do NOT set Content-Type — the browser sets it with the correct boundary.
+    },
+    body: formData,
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `Image upload failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
 // ─── Recipe API ───────────────────────────────────────────────────────────────
 
 export async function listRecipes(params?: {
@@ -265,12 +295,13 @@ export async function importRecipeFromUrl(
 }
 
 export async function importRecipeFromText(
-  text: string
+  text: string,
+  imagePath?: string | null
 ): Promise<{ success: boolean; jobId?: string; error?: string }> {
   try {
     const result = await backendFetch<{ jobId: string; status: string }>(
       "/api/recipes/import/text",
-      { method: "POST", body: { text } }
+      { method: "POST", body: { text, imagePath: imagePath ?? null } }
     );
     return { success: true, jobId: result.jobId };
   } catch (e) {

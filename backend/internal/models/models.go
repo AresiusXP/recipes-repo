@@ -78,6 +78,11 @@ type UpdateRecipeRequest struct {
 	Ingredients []string `json:"ingredients"`
 	Steps       []string `json:"steps"`
 	Tags        []string `json:"tags"`
+	// ImagePath is a pointer so we can distinguish "not provided" (nil) from
+	// "explicitly set to null" (pointer to nil / empty string means remove).
+	// When nil, the existing imagePath in the DB is left unchanged.
+	// When non-nil, the value (which may be an empty string meaning "remove") is written.
+	ImagePath *string `json:"imagePath"`
 }
 
 type ImportRecipeRequest struct {
