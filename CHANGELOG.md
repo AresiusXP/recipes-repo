@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.4.2] — 2026-06-08
+
+_Backend service release_
+
+- fix: prevent crash on recipes with zero tags
+- ci: trigger helm release on service workflow completion
+- force helm build
+- force helm build
+- fix(frontend): remove redundant recipe ownership check
+- ci: delegate chart packaging to release-helm workflow
+- fix(frontend,backend): persist uploaded recipe images
+
 ## [Frontend 0.11.5] — 2026-06-08
 
 _Frontend service release_
