@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.5] — 2026-06-08
+
+_Frontend service release_
+
+- fix: prevent crash on recipes with zero tags
+- ci: trigger helm release on service workflow completion
+- force helm build
+- force helm build
+
 ## [Helm 0.1.30] — 2026-06-08
 
 _Chart-only release (appVersion unchanged)_
