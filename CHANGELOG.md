@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.30] — 2026-06-08
+
+_Chart-only release (appVersion unchanged)_
+
+- force helm build
+- force helm build
+- fix(frontend): remove redundant recipe ownership check
+- ci: delegate chart packaging to release-helm workflow
+- fix(frontend,backend): persist uploaded recipe images
+- build(frontend): patch Next.js and PostCSS vulnerabilities
+- feat: support Instagram reel recipe imports
+- fix(backend): block private network SSRF targets
+- fix(backend): skip logging health probe requests
+- fix(scraper): retry blocked fetches in Playwright
+- Set package-ecosystem to 'gomod' in dependabot config
+- fix(backend): don't overwrite name/image on subsequent OAuth sign-ins
+- feat: implement linked accounts (AccountProvider table + full flow)
+- fix(frontend): fix import status poller auth (secureCookie + JWS re-sign)
+- fix(backend): accept DD/MM/YYYY date format for cookThisWeek
+- fix(backend): include name, email, image in GetSettings response
+- fix(backend): include recipeCount and accountProviders in admin user list
+- fix(db): add missing bannedAt column to User table
+- fix(db+frontend): add missing columns and media proxy route
+- chore: add missing package-lock files and ignore e2e test-results
+- fix(auth): pass secureCookie:true to getToken() to match HKDF salt
+- fix(auth): skip iss parameter check for Google OAuth provider
+- fix(auth): restore backend API auth for NextAuth v5 sessions
+- fix(helm): replace non-ASCII chars in values.yaml to fix Argo CD gRPC UTF-8 error
+- docs(agents): sync AGENTS.md with current architecture
+
 ## [Frontend 0.11.4] — 2026-06-08
 
 _Frontend service release_
