@@ -10,7 +10,7 @@ import { ShareRecipeButton } from "@/components/ShareRecipeButton";
 import type { TargetLanguage } from "@/lib/gemini";
 
 export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
-  const session = await requireAuth();
+  await requireAuth();
   const { id } = await props.params;
 
   let recipe;
@@ -20,7 +20,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
     notFound();
   }
 
-  if (!recipe || recipe.userId !== session.user.id) {
+  if (!recipe) {
     notFound();
   }
 
