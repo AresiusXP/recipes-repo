@@ -78,6 +78,9 @@ func (h *RecipeHandler) List(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		item.Tags = tags
+		if item.Tags == nil {
+			item.Tags = []string{}
+		}
 
 		// Apply tag filter in Go (simpler than complex SQL)
 		if len(tagFilter) > 0 && !hasAnyTag(item.Tags, tagFilter) {
@@ -975,6 +978,10 @@ func (h *RecipeHandler) ReconcilePendingJobs(ctx context.Context) {
 
 func (h *RecipeHandler) getRecipeByID(ctx context.Context, recipeID, userID string) (*models.Recipe, error) {
 	var r models.Recipe
+	// Initialize slices so they marshal as [] not null when empty.
+	r.Tags = []string{}
+	r.Ingredients = []string{}
+	r.Steps = []string{}
 	var ingredientsJSON, stepsJSON string
 
 	err := h.db.QueryRow(ctx, `

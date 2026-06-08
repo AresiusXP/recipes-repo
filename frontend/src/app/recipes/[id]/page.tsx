@@ -24,9 +24,9 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
     notFound();
   }
 
-  const ingredients = recipe.ingredients;
-  const steps = recipe.steps;
-  const tags = recipe.tags;
+  const ingredients = recipe.ingredients ?? [];
+  const steps = recipe.steps ?? [];
+  const tags = recipe.tags ?? [];
 
   // Show translate button if:
   // - URL recipes: always (source can be re-scraped any time)

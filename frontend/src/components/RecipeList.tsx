@@ -18,7 +18,7 @@ interface RecipeSummary {
   sourceUrl: string | null;
   isFavorite: boolean;
   cookThisWeekUntil: string | null;
-  tags: string[];
+  tags: string[] | null;
   createdAt: string;
 }
 
@@ -395,9 +395,9 @@ export function RecipeList({
                       By {formatReadable(recipe.cookThisWeekUntil!)}
                     </span>
                   )}
-                  {recipe.tags.length > 0 && (
+                  {(recipe.tags ?? []).length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {recipe.tags.slice(0, 4).map((tag) => (
+                      {(recipe.tags ?? []).slice(0, 4).map((tag) => (
                         <span
                           key={tag}
                           className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
@@ -405,9 +405,9 @@ export function RecipeList({
                           {tag}
                         </span>
                       ))}
-                      {recipe.tags.length > 4 && (
+                      {(recipe.tags ?? []).length > 4 && (
                         <span className="text-xs text-zinc-400">
-                          +{recipe.tags.length - 4} more
+                          +{(recipe.tags ?? []).length - 4} more
                         </span>
                       )}
                     </div>
@@ -487,7 +487,7 @@ export function RecipeList({
                         By {formatReadable(recipe.cookThisWeekUntil!)}
                       </span>
                     )}
-                    {recipe.tags.slice(0, 3).map((tag) => (
+                    {(recipe.tags ?? []).slice(0, 3).map((tag) => (
                       <span
                         key={tag}
                         className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
@@ -495,9 +495,9 @@ export function RecipeList({
                         {tag}
                       </span>
                     ))}
-                    {recipe.tags.length > 3 && (
+                    {(recipe.tags ?? []).length > 3 && (
                       <span className="text-xs text-zinc-400">
-                        +{recipe.tags.length - 3} more
+                        +{(recipe.tags ?? []).length - 3} more
                       </span>
                     )}
                   </div>

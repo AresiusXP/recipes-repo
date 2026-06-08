@@ -21,9 +21,9 @@ export default async function EditRecipePage(props: { params: Promise<{ id: stri
   const initialData = {
     title: recipe.title,
     description: recipe.description || "",
-    ingredients: recipe.ingredients,
-    steps: recipe.steps,
-    tags: recipe.tags,
+    ingredients: recipe.ingredients ?? [],
+    steps: recipe.steps ?? [],
+    tags: recipe.tags ?? [],
   };
 
   return (

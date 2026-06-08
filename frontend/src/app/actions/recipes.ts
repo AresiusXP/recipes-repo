@@ -172,7 +172,7 @@ export const searchRecipes = getRecipes;
 export const getUserTags = async (): Promise<string[]> => {
   const recipes = await listRecipes();
   const tagSet = new Set<string>();
-  recipes.forEach((r) => r.tags.forEach((t) => tagSet.add(t)));
+  recipes.forEach((r) => (r.tags ?? []).forEach((t) => tagSet.add(t)));
   return Array.from(tagSet).sort();
 };
 export const updateRecipe = updateRecipeAction;

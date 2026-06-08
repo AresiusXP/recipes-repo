@@ -116,7 +116,7 @@ export interface RecipeListItem {
   isFavorite: boolean;
   cookThisWeekUntil: string | null;
   createdAt: string;
-  tags: string[];
+  tags: string[] | null;
 }
 
 export interface Recipe extends RecipeListItem {
