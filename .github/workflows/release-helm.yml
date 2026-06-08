@@ -1,17 +1,29 @@
 # Chart release workflow — the single source of truth for packaging and pushing
 # the Helm chart to GHCR OCI.
 #
-# Triggered by helm-v* tags in two scenarios:
-#   1. Automatically by service release workflows (frontend-v*, backend-v*, scraper-v*)
-#      after they bump the chart version and image tag in main.
-#   2. Manually when only Helm templates or values change (no service image rebuild needed).
+# Triggered in two ways:
+#   1. workflow_run: automatically when a service release workflow (Release - Frontend,
+#      Release - Backend, Release - Scraper) completes successfully. The service workflow
+#      has already bumped Chart.yaml and values.yaml on main before finishing, so this
+#      workflow just reads the version from Chart.yaml and packages the chart.
+#      (Using workflow_run instead of a helm-v* tag push avoids the GitHub limitation
+#      where GITHUB_TOKEN-authenticated tag pushes cannot trigger downstream workflows.)
+#   2. push: tags helm-v* — for manual chart-only releases when only Helm templates or
+#      values change with no associated service image rebuild.
 #
-# In both cases this workflow reads Chart.yaml from main, sets the version to the
-# tag version, commits it back, packages the chart, and pushes it to GHCR.
+# In both cases the workflow reads Chart.yaml from main, optionally sets the version
+# (manual tag path), commits it back if needed, packages the chart, and pushes to GHCR.
 
 name: Release - Helm chart
 
 on:
+  workflow_run:
+    workflows:
+      - "Release - Frontend"
+      - "Release - Backend"
+      - "Release - Scraper"
+    types:
+      - completed
   push:
     tags:
       - "helm-v*"
@@ -31,6 +43,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # For workflow_run events: only proceed when the triggering workflow succeeded.
+    # For push (manual helm-v* tag): always proceed.
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout repository
@@ -39,10 +54,19 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#helm-v}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Manual helm-v* tag push: extract version from the tag name
+            VERSION="${GITHUB_REF_NAME#helm-v}"
+          else
+            # Triggered by a service release workflow: the service workflow already
+            # bumped Chart.yaml on main, so read the version from there.
+            git fetch origin main
+            git checkout -f main
+            VERSION=$(yq '.version' "${{ env.CHART_PATH }}/Chart.yaml")
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Lowercase registry paths
@@ -79,5 +103,12 @@ jobs:
           helm package "${{ env.CHART_PATH }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
             --username "${{ github.actor }}" --password-stdin
+          # Skip push if this version already exists (handles duplicate workflow_run triggers
+          # when two service releases complete close together and both queue a helm run).
+          if helm show chart "oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts/recipes" \
+              --version "${VERSION}" >/dev/null 2>&1; then
+            echo "Chart version ${VERSION} already exists in registry — skipping push."
+            exit 0
+          fi
           helm push "recipes-${VERSION}.tgz" \
             "oci://${{ env.REGISTRY }}/${{ steps.registry.outputs.owner }}/charts"
