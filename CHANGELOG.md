@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.4] — 2026-06-08
+
+_Frontend service release_
+
+- fix(frontend): remove redundant recipe ownership check
+- ci: delegate chart packaging to release-helm workflow
+- fix(frontend,backend): persist uploaded recipe images
+
 ## [Backend 1.4.1] — 2026-05-20
 
 _Backend service release_
