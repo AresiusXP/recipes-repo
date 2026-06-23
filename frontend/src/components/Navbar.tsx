@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { auth } from "@/lib/auth";
 import { handleSignOut } from "@/app/actions/auth";
 import { UserMenu } from "@/components/UserMenu";
@@ -26,7 +27,7 @@ export async function Navbar() {
           href="/recipes"
           className="flex items-center gap-2 font-serif text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
         >
-            <img src="/favicon.ico" alt="Recipes" className="h-6 w-6" />
+            <Image src="/favicon.ico" alt="Recipes" width={24} height={24} className="h-6 w-6" />
           <span className="hidden sm:inline">Recipes Repo</span>
         </Link>
 
