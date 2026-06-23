@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.8] — 2026-06-23
+
+_Frontend service release_
+
+- fix: preserve scroll and prevent full page refresh on browser back
+- fix: eliminate scroll and theme flashes on page navigation
+
 ## [Helm 0.1.34] — 2026-06-23
 
 _Chart-only release (appVersion unchanged)_
