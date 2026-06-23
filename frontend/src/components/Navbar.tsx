@@ -110,3 +110,30 @@ export async function Navbar() {
     </nav>
   );
 }
+
+/**
+ * Static placeholder rendered as the <Suspense> fallback for <Navbar>.
+ *
+ * Reproduces the navbar's outer shell and fixed height so the page layout does
+ * not shift while the dynamic (auth-dependent) navbar streams in. The logo is
+ * static and shown immediately; auth-dependent actions are omitted from the
+ * fallback. Required because <Navbar> reads request-time auth state, which under
+ * Cache Components must resolve inside a Suspense boundary.
+ */
+export function NavbarSkeleton() {
+  return (
+    <nav className="sticky top-4 z-50 mx-auto mt-4 w-[calc(100%-2rem)] max-w-4xl rounded-2xl border border-zinc-200/50 bg-white/70 shadow-sm backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-800/50">
+      <div className="flex h-14 items-center justify-between px-4">
+        <Link
+          href="/recipes"
+          className="flex items-center gap-2 font-serif text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50"
+        >
+          <Image src="/favicon.ico" alt="Recipes" width={24} height={24} className="h-6 w-6" />
+          <span className="hidden sm:inline">Recipes Repo</span>
+        </Link>
+        {/* Action buttons intentionally omitted while auth state resolves. */}
+        <div className="h-9" aria-hidden="true" />
+      </div>
+    </nav>
+  );
+}

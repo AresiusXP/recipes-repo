@@ -9,7 +9,6 @@ import { formatReadable, isCookThisWeekActive } from "@/lib/cook-this-week";
 
 type ViewMode = "grid" | "list";
 const VIEW_MODE_KEY = "recipes:view-mode";
-const SCROLL_KEY_PREFIX = "recipes:scroll-y:";
 
 interface RecipeSummary {
   id: string;
@@ -65,43 +64,12 @@ export function RecipeList({
     }
   }, []);
 
-  // Restore scroll position when returning from a recipe detail page
-  const scrollKey = SCROLL_KEY_PREFIX + (favoritesOnly ? "/recipes/favorites" : "/recipes");
-  useEffect(() => {
-    try {
-      const savedY = sessionStorage.getItem(scrollKey);
-      if (savedY !== null) {
-        sessionStorage.removeItem(scrollKey);
-        const y = parseInt(savedY, 10);
-        if (!isNaN(y) && y > 0) {
-          window.scrollTo({ top: y, behavior: "instant" });
-        }
-      }
-    } catch {
-      // sessionStorage not available; ignore
-    }
-  }, [scrollKey]);
-
   function handleSetViewMode(mode: ViewMode) {
     setViewMode(mode);
     try {
       localStorage.setItem(VIEW_MODE_KEY, mode);
     } catch {
       // ignore write errors
-    }
-  }
-
-  function saveScrollPosition(e: React.MouseEvent) {
-    // Skip modified clicks (Cmd/Ctrl/Shift/Alt) and middle clicks — those open
-    // a new tab, so the current page stays open and the saved position would be
-    // misleading on the next fresh visit.
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) {
-      return;
-    }
-    try {
-      sessionStorage.setItem(scrollKey, String(window.scrollY));
-    } catch {
-      // sessionStorage not available; ignore
     }
   }
 
@@ -388,7 +356,6 @@ export function RecipeList({
               </div>
               <Link
                 href={`/recipes/${recipe.id}`}
-                onClick={saveScrollPosition}
                 className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {recipe.imagePath && (
@@ -460,7 +427,6 @@ export function RecipeList({
             >
               <Link
                 href={`/recipes/${recipe.id}`}
-                onClick={saveScrollPosition}
                 className="flex min-w-0 flex-1 items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {/* Thumbnail */}

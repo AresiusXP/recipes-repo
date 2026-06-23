@@ -1,4 +1,5 @@
-import { Navbar } from "@/components/Navbar";
+import { Suspense } from "react";
+import { Navbar, NavbarSkeleton } from "@/components/Navbar";
 
 export default function SettingsLayout({
   children,
@@ -7,7 +8,9 @@ export default function SettingsLayout({
 }) {
   return (
     <>
-      <Navbar />
+      <Suspense fallback={<NavbarSkeleton />}>
+        <Navbar />
+      </Suspense>
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
         {children}
       </main>

@@ -356,6 +356,11 @@ A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres
 ## Build Configuration Cautions
 
 - `frontend/next.config.ts` uses `output: "standalone"`. Do not remove it.
+- **Cache Components is enabled** (`cacheComponents: true` in `next.config.ts`, Next.js 16). This makes all pages dynamic-by-default and uses React `<Activity>` to preserve page DOM + scroll position on client-side back/forward navigation (fixes scroll-reset-on-back). Consequences to respect:
+  - **Request-time data access (`auth()`, `cookies()`, `headers()`, and uncached `backendFetch` calls) MUST be inside a `<Suspense>` boundary.** The build fails with "Uncached data was accessed outside of `<Suspense>`" otherwise. Pattern: keep the page/layout shell static and move the auth + data fetch into an inner `async` component wrapped in `<Suspense fallback={<Skeleton/>}>`.
+  - The root layout is intentionally static and does **not** read the theme server-side; first-paint theming is driven solely by the blocking inline `<head>` script (reads the `theme` cookie) plus `ThemeController`/`ThemeSync` (which reconciles the DB preference inside Suspense).
+  - Routes show as `◐ (Partial Prerender)` in build output — static shell prerendered, dynamic content streamed. This is expected.
+  - In E2E tests, hidden `<Activity>` routes stay in the DOM (`display:none`). Use visibility-aware selectors (`getByRole`, `{ visible: true }`) — not raw locators.
 - A static **Content-Security-Policy** header is applied to all routes in `next.config.ts`. `unsafe-eval` is only added in development.
 - `experimental.serverActions.bodySizeLimit` is set to `"10mb"` to allow recipe image uploads.
 - ESLint config (`eslint.config.mjs`) uses the flat config format with `eslint-config-next` core-web-vitals and TypeScript presets.

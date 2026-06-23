@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Inter, Lora } from "next/font/google";
-import { getThemePreference } from "@/app/actions/user";
-import { ThemeController } from "@/components/ThemeController";
+import { ThemeSync } from "@/components/ThemeSync";
 import "./globals.css";
 
 const inter = Inter({
@@ -24,26 +24,24 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const theme = await getThemePreference();
-  // Apply dark class server-side for explicit "dark" to avoid FOUC.
-  // "light" and "system" start classless; ThemeController reconciles on the client.
-  const initialClass = theme === "dark" ? "dark" : "";
-
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${lora.variable} ${initialClass} h-full antialiased`}
+      className={`${inter.variable} ${lora.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
         {/* Blocking inline script: runs before first paint to apply the correct
             dark/light class from the theme cookie — eliminates flash of
-            unstyled content (FOUC) for "system" preference users on dark OS. */}
+            unstyled content (FOUC) for "system" preference users on dark OS.
+            This is the sole driver of first-paint theming; the server layout no
+            longer reads the preference (which would force the whole tree to be
+            request-time/dynamic under Cache Components). */}
         <script
           id="theme-init"
           dangerouslySetInnerHTML={{
@@ -52,9 +50,14 @@ export default async function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col font-serif text-lg leading-relaxed">
-        <ThemeController theme={theme} />
+        {/* Request-time theme reconciliation, isolated behind Suspense so the
+            static shell can prerender. Renders no visible UI. */}
+        <Suspense fallback={null}>
+          <ThemeSync />
+        </Suspense>
         {children}
       </body>
     </html>
   );
 }
+
