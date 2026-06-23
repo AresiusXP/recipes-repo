@@ -40,6 +40,17 @@ export default async function RootLayout({
       className={`${inter.variable} ${lora.variable} ${initialClass} h-full antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        {/* Blocking inline script: runs before first paint to apply the correct
+            dark/light class from the theme cookie — eliminates flash of
+            unstyled content (FOUC) for "system" preference users on dark OS. */}
+        <script
+          id="theme-init"
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var c=document.cookie.match(/(?:^|;\\s*)theme=([^;]+)/);var t=c?c[1]:'system';if(t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col font-serif text-lg leading-relaxed">
         <ThemeController theme={theme} />
         {children}

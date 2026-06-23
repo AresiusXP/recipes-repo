@@ -74,9 +74,7 @@ export function RecipeList({
         sessionStorage.removeItem(scrollKey);
         const y = parseInt(savedY, 10);
         if (!isNaN(y) && y > 0) {
-          requestAnimationFrame(() => {
-            window.scrollTo({ top: y, behavior: "instant" });
-          });
+          window.scrollTo({ top: y, behavior: "instant" });
         }
       }
     } catch {
