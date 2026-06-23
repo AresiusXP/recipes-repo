@@ -1,10 +1,5 @@
 "use client";
 
-// This is a pure client component (no server-side request-time data reads), so
-// it needs no <Suspense> boundary under Cache Components — it compiles as a
-// static shell and hydrates on the client. Auth gating for this route is
-// enforced by the backend on submit (the import server actions).
-
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { importRecipeFromUrl, importRecipeFromText } from "@/app/actions/recipes";

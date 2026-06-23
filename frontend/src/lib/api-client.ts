@@ -37,6 +37,21 @@ const getAuthToken = cache(async (): Promise<string> => {
     cookieStore.getAll().map((c) => [c.name, c.value])
   );
 
+  // Determine whether NextAuth used the secure cookie name (`__Secure-` prefix).
+  // NextAuth uses the secure cookie over HTTPS and the plain name over HTTP.
+  // Hardcoding this breaks whichever transport doesn't match, so derive it from
+  // the actual request: prefer an explicit secure cookie if present, else fall
+  // back to the forwarded protocol / AUTH_URL.
+  const hasSecureCookie = reqCookies["__Secure-authjs.session-token"] !== undefined;
+  const hasPlainCookie = reqCookies["authjs.session-token"] !== undefined;
+  const forwardedProto = headersList.get("x-forwarded-proto");
+  const authUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || "";
+  const isHttps = hasSecureCookie
+    ? true
+    : hasPlainCookie
+      ? false
+      : forwardedProto === "https" || authUrl.startsWith("https://");
+
   // Decode the JWE session cookie into a plain payload object.
   const rawToken = await getToken({
     req: {
@@ -44,9 +59,8 @@ const getAuthToken = cache(async (): Promise<string> => {
       cookies: reqCookies,
     } as Parameters<typeof getToken>[0]["req"],
     secret: process.env.AUTH_SECRET!,
-    // Must match the secure context used during encryption.
-    // NextAuth sets __Secure-authjs.session-token on HTTPS; the salt must match.
-    secureCookie: true,
+    // Must match the cookie name NextAuth actually used during encryption.
+    secureCookie: isHttps,
   });
 
   if (!rawToken) {

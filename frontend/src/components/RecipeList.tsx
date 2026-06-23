@@ -9,6 +9,7 @@ import { formatReadable, isCookThisWeekActive } from "@/lib/cook-this-week";
 
 type ViewMode = "grid" | "list";
 const VIEW_MODE_KEY = "recipes:view-mode";
+const SCROLL_KEY_PREFIX = "recipes:scroll-y:";
 
 interface RecipeSummary {
   id: string;
@@ -63,6 +64,85 @@ export function RecipeList({
       // localStorage not available (e.g. SSR or private mode); keep default
     }
   }, []);
+
+  // ── Scroll position preservation (manual) ──────────────────────────────────
+  // The recipe list re-renders fresh on browser Back (the page is dynamic and
+  // per-user, so it is re-fetched). Without help, that lands the user at the
+  // top. We save scrollY when leaving for a recipe and restore it on return,
+  // re-asserting across animation frames for a short window so the restore
+  // outlasts the on-Back re-render/data-refetch (and late image layout) that
+  // would otherwise reset us to the top.
+  const scrollKey = SCROLL_KEY_PREFIX + (favoritesOnly ? "/recipes/favorites" : "/recipes");
+
+  useEffect(() => {
+    let savedY: number | null = null;
+    try {
+      const raw = sessionStorage.getItem(scrollKey);
+      if (raw !== null) {
+        sessionStorage.removeItem(scrollKey);
+        const y = parseInt(raw, 10);
+        if (!isNaN(y) && y > 0) savedY = y;
+      }
+    } catch {
+      // sessionStorage unavailable; nothing to restore
+    }
+    if (savedY === null) return;
+
+    const target = savedY;
+    let rafId = 0;
+    const start = performance.now();
+    const WINDOW_MS = 1000;
+
+    // Stop immediately if the user actively interacts (a plain `scroll` event
+    // can't be trusted — the framework's reset-to-top fires one too — but these
+    // input events reliably mean deliberate user intent, so we yield to it).
+    let userInteracted = false;
+    const onInteract = () => {
+      userInteracted = true;
+    };
+    const interactionEvents = ["wheel", "touchmove", "mousedown", "keydown"] as const;
+    interactionEvents.forEach((evt) =>
+      window.addEventListener(evt, onInteract, { passive: true })
+    );
+
+    const cleanup = () => {
+      cancelAnimationFrame(rafId);
+      interactionEvents.forEach((evt) => window.removeEventListener(evt, onInteract));
+    };
+
+    const tick = () => {
+      if (userInteracted) {
+        cleanup();
+        return;
+      }
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      const desired = Math.min(target, Math.max(0, maxScroll));
+      if (Math.abs(window.scrollY - desired) > 2) {
+        window.scrollTo({ top: desired, behavior: "instant" });
+      }
+      if (performance.now() - start < WINDOW_MS) {
+        rafId = requestAnimationFrame(tick);
+      } else {
+        cleanup();
+      }
+    };
+    rafId = requestAnimationFrame(tick);
+
+    return cleanup;
+  }, [scrollKey]);
+
+  function saveScrollPosition(e: React.MouseEvent) {
+    // Skip modified / middle clicks — those open a new tab; the current page
+    // stays put, so a saved position would be misleading on the next visit.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(scrollKey, String(window.scrollY));
+    } catch {
+      // sessionStorage unavailable; ignore
+    }
+  }
 
   function handleSetViewMode(mode: ViewMode) {
     setViewMode(mode);
@@ -356,6 +436,7 @@ export function RecipeList({
               </div>
               <Link
                 href={`/recipes/${recipe.id}`}
+                onClick={saveScrollPosition}
                 className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {recipe.imagePath && (
@@ -427,6 +508,7 @@ export function RecipeList({
             >
               <Link
                 href={`/recipes/${recipe.id}`}
+                onClick={saveScrollPosition}
                 className="flex min-w-0 flex-1 items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {/* Thumbnail */}
