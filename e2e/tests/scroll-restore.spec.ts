@@ -1,21 +1,26 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Scroll position restore E2E tests.
+ * Scroll position preservation E2E tests.
  *
- * Verifies that when a user scrolls down the recipe list, clicks a recipe,
- * and navigates back, the list restores the scroll position instead of
- * resetting to the top.
+ * With Cache Components enabled (Next.js 16), navigating into a recipe and
+ * back is a soft client-side navigation: the list route is kept mounted
+ * (hidden via React <Activity>) so its DOM and scroll position are preserved
+ * natively — no manual save/restore. These tests verify that behavior.
  *
  * Requires:
  *   - E2E_SESSION_COOKIE: a valid NextAuth session cookie (JWE-encrypted)
- *   - At least ~10 recipes in the list (seeded before this test runs)
+ *   - At least ~15 recipes in the list so the page is taller than the viewport
+ *     (seeded before this test runs)
+ *
+ * Note on selectors: Activity keeps hidden routes in the DOM, so prefer
+ * visibility-aware queries (getByRole / { visible: true }) over raw locators.
  */
-test.describe("Scroll position restore", () => {
+test.describe("Scroll position preservation", () => {
   test.beforeEach(async ({ context }) => {
     test.skip(
       !process.env.E2E_SESSION_COOKIE,
-      "No test session cookie — skipping scroll restore tests"
+      "No test session cookie — skipping scroll preservation tests"
     );
 
     await context.addCookies([
@@ -30,64 +35,63 @@ test.describe("Scroll position restore", () => {
     ]);
   });
 
-  test("restores scroll position after navigating back from recipe detail", async ({ page }) => {
-    // 1. Go to the recipe list
+  test("preserves scroll position when navigating back from a recipe", async ({ page }) => {
+    // Count full document loads — a soft client navigation must not trigger one.
+    let hardLoads = 0;
+    page.on("load", () => {
+      hardLoads++;
+    });
+
+    // 1. Go to the recipe list and wait for cards to be visible
     await page.goto("/recipes");
-    await expect(page.locator("main")).toBeVisible();
+    const firstCard = page
+      .getByRole("link")
+      .filter({ hasText: /Scroll Test Recipe/ })
+      .first();
+    await expect(firstCard).toBeVisible({ timeout: 10000 });
 
-    // 2. Wait for recipe cards to render
-    const recipeLinks = page.locator('a[href^="/recipes/"]').filter({ hasNot: page.locator('[href="/recipes/new"], [href="/recipes/favorites"]') });
-    await expect(recipeLinks.first()).toBeVisible({ timeout: 10000 });
-
-    // 3. Scroll down significantly — to 60% of the page height
+    // 2. Scroll down ~60% of the page
     await page.evaluate(() => {
       window.scrollTo({ top: document.body.scrollHeight * 0.6, behavior: "instant" });
     });
-
-    // 4. Wait for the scroll to settle and capture the position
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(150);
     const scrollYBefore = await page.evaluate(() => window.scrollY);
-    expect(scrollYBefore).toBeGreaterThan(50); // must have actually scrolled
+    expect(scrollYBefore).toBeGreaterThan(50);
 
-    // 5. Click the first visible recipe card link (may be mid-list after scrolling)
-    const visibleRecipeLink = recipeLinks.filter({ hasText: /Scroll Test Recipe/ }).first();
-    await visibleRecipeLink.scrollIntoViewIfNeeded();
-    await visibleRecipeLink.click();
+    const loadsBeforeNav = hardLoads;
 
-    // 6. Wait for the recipe detail page to load
+    // 3. Click a recipe card that is currently within the viewport.
+    //    Do NOT scrollIntoView — that would change the scroll position we want
+    //    to assert is preserved. Pick the first visible card instead.
+    const visibleCard = page
+      .getByRole("link")
+      .filter({ hasText: /Scroll Test Recipe/ })
+      .filter({ visible: true })
+      .first();
+    await visibleCard.click();
+
+    // 4. Land on the recipe detail page
     await expect(page).toHaveURL(/\/recipes\/[a-z0-9-]+$/, { timeout: 10000 });
 
-    // 7. Navigate back
+    // 5. Browser back
     await page.goBack();
+    await expect(page).toHaveURL(/\/recipes$/, { timeout: 10000 });
+    await page.waitForTimeout(300);
 
-    // 8. Wait for the recipe list to be visible again
-    await expect(page.locator("main")).toBeVisible();
-    await expect(recipeLinks.first()).toBeVisible({ timeout: 10000 });
-
-    // 9. Give the scroll restore a brief moment to fire
-    await page.waitForTimeout(200);
-
-    // 10. Assert scroll position was restored (within ±100px tolerance)
+    // 6. Scroll position preserved within a small tolerance
     const scrollYAfter = await page.evaluate(() => window.scrollY);
-    expect(scrollYAfter).toBeGreaterThan(50); // not back at the top
     expect(Math.abs(scrollYAfter - scrollYBefore)).toBeLessThan(100);
+
+    // 7. The forward + back navigation must have been soft (no full reload)
+    expect(hardLoads - loadsBeforeNav).toBe(0);
   });
 
-  test("does not restore scroll on fresh visit to recipe list", async ({ page }) => {
-    // Navigate directly to /recipes — no saved scroll position
+  test("starts at the top on a fresh visit to the recipe list", async ({ page }) => {
     await page.goto("/recipes");
-    await expect(page.locator("main")).toBeVisible();
-    await page.waitForTimeout(200);
-
-    const scrollY = await page.evaluate(() => window.scrollY);
-    expect(scrollY).toBe(0);
-  });
-
-  test("restores scroll independently on favorites list", async ({ page }) => {
-    // Favorites list uses a separate scroll key — should start at 0 independently
-    await page.goto("/recipes/favorites");
-    await expect(page.locator("main")).toBeVisible();
-    await page.waitForTimeout(200);
+    await expect(
+      page.getByRole("link").filter({ hasText: /Scroll Test Recipe/ }).first()
+    ).toBeVisible({ timeout: 10000 });
+    await page.waitForTimeout(150);
 
     const scrollY = await page.evaluate(() => window.scrollY);
     expect(scrollY).toBe(0);

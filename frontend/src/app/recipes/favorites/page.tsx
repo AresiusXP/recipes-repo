@@ -1,8 +1,27 @@
+import { Suspense } from "react";
 import { requireAuth } from "@/lib/require-auth";
 import { RecipeList } from "@/components/RecipeList";
+import { RecipeListSkeleton } from "@/components/RecipeListSkeleton";
 import { searchRecipes, getUserTags } from "@/app/actions/recipes";
 
 export default async function FavoritesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; tags?: string }>;
+}) {
+  return (
+    <div>
+      <h1 className="mb-6 font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+        Favorite Recipes
+      </h1>
+      <Suspense fallback={<RecipeListSkeleton />}>
+        <FavoritesContent searchParams={searchParams} />
+      </Suspense>
+    </div>
+  );
+}
+
+async function FavoritesContent({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; tags?: string }>;
@@ -19,15 +38,10 @@ export default async function FavoritesPage({
   ]);
 
   return (
-    <div>
-      <h1 className="mb-6 font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-        Favorite Recipes
-      </h1>
-      <RecipeList
-        initialRecipes={initialRecipes}
-        initialTags={initialTags}
-        favoritesOnly
-      />
-    </div>
+    <RecipeList
+      initialRecipes={initialRecipes}
+      initialTags={initialTags}
+      favoritesOnly
+    />
   );
 }

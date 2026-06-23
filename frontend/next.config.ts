@@ -29,6 +29,10 @@ const cspHeader = `
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Cache Components (Next.js 16): uses React <Activity> to preserve page DOM +
+  // scroll position on client-side back/forward navigation instead of
+  // unmounting and re-rendering. Fixes scroll-reset-on-back for the recipe list.
+  cacheComponents: true,
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

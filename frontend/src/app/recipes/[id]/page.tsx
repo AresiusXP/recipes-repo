@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireAuth } from "@/lib/require-auth";
@@ -7,11 +8,20 @@ import { FavoriteButton } from "@/components/FavoriteButton";
 import { CookThisWeekButton } from "@/components/CookThisWeekButton";
 import { TranslateRecipeButton } from "@/components/TranslateRecipeButton";
 import { ShareRecipeButton } from "@/components/ShareRecipeButton";
+import { RecipeDetailSkeleton } from "@/components/RecipeDetailSkeleton";
 import type { TargetLanguage } from "@/lib/gemini";
 
-export default async function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
+export default function RecipeDetailPage(props: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<RecipeDetailSkeleton />}>
+      <RecipeDetailContent params={props.params} />
+    </Suspense>
+  );
+}
+
+async function RecipeDetailContent({ params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
-  const { id } = await props.params;
+  const { id } = await params;
 
   let recipe;
   try {
