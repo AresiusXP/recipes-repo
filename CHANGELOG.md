@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.33] — 2026-06-23
+
+_Chart-only release (appVersion unchanged)_
+
+- fix: replace img with Next.js Image and upgrade Tailwind CSS
+- feat: restore scroll position when returning to recipe list
+
 ## [Frontend 0.11.6] — 2026-06-23
 
 _Frontend service release_
