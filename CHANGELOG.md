@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.11.9] — 2026-06-23
+
+_Frontend service release_
+
+- fix: restore scroll position on back navigation and fix auth cookie mismatch
+- fix: preserve scroll and prevent full page refresh on browser back
+
 ## [Helm 0.1.35] — 2026-06-23
 
 _Chart-only release (appVersion unchanged)_
