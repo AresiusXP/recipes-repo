@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.5.0] — 2026-07-08
+
+_Backend service release_
+
+- feat(admin): add service versions and implement secure user deletion
+- fix(scraper): pin yt-dlp to 2026.07.04 and configure Renovate
+- fix: restore scroll position on back navigation and fix auth cookie mismatch
+- fix: preserve scroll and prevent full page refresh on browser back
+- fix: eliminate scroll and theme flashes on page navigation
+- fix: replace img with Next.js Image and upgrade Tailwind CSS
+- feat: restore scroll position when returning to recipe list
+
 ## [Helm 0.1.37] — 2026-07-08
 
 _Chart-only release (appVersion unchanged)_
