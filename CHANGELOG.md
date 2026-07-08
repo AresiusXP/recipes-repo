@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Scraper 1.2.1] — 2026-07-08
+
+_Scraper service release_
+
+- fix(scraper): pin yt-dlp to 2026.07.04 and configure Renovate
+- fix: restore scroll position on back navigation and fix auth cookie mismatch
+- fix: preserve scroll and prevent full page refresh on browser back
+- fix: eliminate scroll and theme flashes on page navigation
+- fix: replace img with Next.js Image and upgrade Tailwind CSS
+- feat: restore scroll position when returning to recipe list
+- fix: prevent crash on recipes with zero tags
+- ci: trigger helm release on service workflow completion
+- force helm build
+- force helm build
+- fix(frontend): remove redundant recipe ownership check
+- ci: delegate chart packaging to release-helm workflow
+- fix(frontend,backend): persist uploaded recipe images
+- build(frontend): patch Next.js and PostCSS vulnerabilities
+
 ## [Helm 0.1.36] — 2026-06-23
 
 _Chart-only release (appVersion unchanged)_
