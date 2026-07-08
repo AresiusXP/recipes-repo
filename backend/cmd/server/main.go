@@ -125,9 +125,11 @@ func main() {
 		// Admin
 		r.Group(func(r chi.Router) {
 			r.Use(handlers.RequireAdmin)
+			r.Get("/api/admin/info", adminHandler.GetInfo)
 			r.Get("/api/admin/users", adminHandler.ListUsers)
 			r.Post("/api/admin/users/{id}/ban", adminHandler.BanUser)
 			r.Post("/api/admin/users/{id}/unban", adminHandler.UnbanUser)
+			r.Delete("/api/admin/users/{id}", adminHandler.DeleteUser)
 		})
 	})
 

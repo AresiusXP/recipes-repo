@@ -8,10 +8,13 @@ import {
   getAdminUsers as apiGetAdminUsers,
   banUser as apiBanUser,
   unbanUser as apiUnbanUser,
+  deleteUser as apiDeleteUser,
+  getAdminInfo as apiGetAdminInfo,
 } from "@/lib/api-client";
-import type { AdminUser } from "@/lib/api-client";
+import type { AdminUser, AdminInfo } from "@/lib/api-client";
 
 export type { AdminUser } from "@/lib/api-client";
+export type { AdminInfo, ServiceVersions } from "@/lib/api-client";
 
 export async function getAdminUsersAction(): Promise<AdminUser[]> {
   return apiGetAdminUsers();
@@ -19,6 +22,13 @@ export async function getAdminUsersAction(): Promise<AdminUser[]> {
 
 // Alias used by admin page
 export const listAdminUsers = getAdminUsersAction;
+
+/**
+ * Fetch deployment info (running service versions) for the admin page.
+ */
+export async function getAdminInfo(): Promise<AdminInfo> {
+  return apiGetAdminInfo();
+}
 
 export async function banUserAction(
   id: string
@@ -44,23 +54,5 @@ export const unbanUser = unbanUserAction;
 export async function deleteUser(
   id: string
 ): Promise<{ success: boolean; error?: string }> {
-  const { auth } = await import("@/lib/auth");
-  const { redirect } = await import("next/navigation");
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-  const userId = session!.user!.id;
-  const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8080";
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/admin/users/${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${userId}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      return { success: false, error: err.error || "Failed to delete user" };
-    }
-    return { success: true };
-  } catch (e) {
-    return { success: false, error: e instanceof Error ? e.message : "Failed to delete user" };
-  }
+  return apiDeleteUser(id);
 }

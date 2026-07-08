@@ -483,6 +483,31 @@ export async function unbanUser(
   }
 }
 
+export async function deleteUser(
+  id: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await backendFetch(`/api/admin/users/${id}`, { method: "DELETE" });
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed to delete user" };
+  }
+}
+
+export interface ServiceVersions {
+  backend: string;
+  frontend: string;
+  scraper: string;
+}
+
+export interface AdminInfo {
+  versions: ServiceVersions;
+}
+
+export async function getAdminInfo(): Promise<AdminInfo> {
+  return backendFetch<AdminInfo>("/api/admin/info");
+}
+
 export interface LinkedAccount {
   provider: string;
   providerAccountId: string;

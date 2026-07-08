@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { banUser, unbanUser, deleteUser, type AdminUser } from "@/app/actions/admin";
 
 interface AdminUsersTableProps {
@@ -29,6 +30,7 @@ function ProviderBadge({ provider }: { provider: string }) {
 }
 
 export function AdminUsersTable({ users, currentUserId }: AdminUsersTableProps) {
+  const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -40,7 +42,11 @@ export function AdminUsersTable({ users, currentUserId }: AdminUsersTableProps) 
     setConfirmBan(null);
     const result = await banUser(userId);
     setPending(null);
-    if (!result.success) setError(result.error ?? "Failed to ban user.");
+    if (!result.success) {
+      setError(result.error ?? "Failed to ban user.");
+      return;
+    }
+    router.refresh();
   }
 
   async function handleUnban(userId: string) {
@@ -48,7 +54,11 @@ export function AdminUsersTable({ users, currentUserId }: AdminUsersTableProps) 
     setError(null);
     const result = await unbanUser(userId);
     setPending(null);
-    if (!result.success) setError(result.error ?? "Failed to unban user.");
+    if (!result.success) {
+      setError(result.error ?? "Failed to unban user.");
+      return;
+    }
+    router.refresh();
   }
 
   async function handleDelete(userId: string) {
@@ -57,7 +67,11 @@ export function AdminUsersTable({ users, currentUserId }: AdminUsersTableProps) 
     setConfirmDelete(null);
     const result = await deleteUser(userId);
     setPending(null);
-    if (!result.success) setError(result.error ?? "Failed to delete user.");
+    if (!result.success) {
+      setError(result.error ?? "Failed to delete user.");
+      return;
+    }
+    router.refresh();
   }
 
   return (

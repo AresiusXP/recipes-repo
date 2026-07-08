@@ -144,6 +144,18 @@ type AdminUser struct {
 	AccountProviders []string   `json:"accountProviders"`
 }
 
+// ServiceVersions holds the deployed image tag of each service.
+type ServiceVersions struct {
+	Backend  string `json:"backend"`
+	Frontend string `json:"frontend"`
+	Scraper  string `json:"scraper"`
+}
+
+// AdminInfo is the payload returned by GET /api/admin/info.
+type AdminInfo struct {
+	Versions ServiceVersions `json:"versions"`
+}
+
 // ─── Shareable user (for share picker) ───────────────────────────────────────
 
 type ShareableUser struct {

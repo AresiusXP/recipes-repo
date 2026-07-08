@@ -59,6 +59,14 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.backend.config.port | quote }}
+            # Deployed image tags, surfaced in the Admin page. Resolved at render
+            # time from values.yaml so no runtime Kubernetes API lookup is needed.
+            - name: APP_VERSION_BACKEND
+              value: {{ .Values.backend.image.tag | default .Chart.AppVersion | quote }}
+            - name: APP_VERSION_FRONTEND
+              value: {{ .Values.frontend.image.tag | default .Chart.AppVersion | quote }}
+            - name: APP_VERSION_SCRAPER
+              value: {{ .Values.scraper.image.tag | default .Chart.AppVersion | quote }}
             - name: SCRAPER_URL
               value: {{ .Values.backend.config.scraperUrl | quote }}
             - name: MEDIA_DIR

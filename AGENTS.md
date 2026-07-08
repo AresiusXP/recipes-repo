@@ -391,6 +391,9 @@ A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres
 | `BACKEND_INTERNAL_SECRET` | Shared secret protecting the internal auth endpoint (must match frontend) |
 | `ADMIN_EMAILS` | Comma-separated list of admin emails |
 | `ALLOWED_EMAILS` | Comma-separated allowlist for new registrations |
+| `APP_VERSION_BACKEND` | Deployed backend image tag, shown on the Admin page (Helm-injected; defaults to `unknown`) |
+| `APP_VERSION_FRONTEND` | Deployed frontend image tag, shown on the Admin page (Helm-injected; defaults to `unknown`) |
+| `APP_VERSION_SCRAPER` | Deployed scraper image tag, shown on the Admin page (Helm-injected; defaults to `unknown`) |
 
 ### Scraper (`scraper/.env`)
 
