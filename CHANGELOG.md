@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.38] — 2026-07-08
+
+_Chart-only release (appVersion unchanged)_
+
+- feat(admin): add service versions and implement secure user deletion
+
 ## [Backend 1.5.0] — 2026-07-08
 
 _Backend service release_
