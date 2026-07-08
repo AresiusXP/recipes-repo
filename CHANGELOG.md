@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.12.0] — 2026-07-08
+
+_Frontend service release_
+
+- feat(admin): add service versions and implement secure user deletion
+- fix(scraper): pin yt-dlp to 2026.07.04 and configure Renovate
+
 ## [Helm 0.1.38] — 2026-07-08
 
 _Chart-only release (appVersion unchanged)_
