@@ -16,6 +16,9 @@ FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
+# renovate: datasource=github-releases depName=yt-dlp/yt-dlp
+ARG YT_DLP_VERSION="2026.07.04"
+
 ENV NODE_ENV=production
 ENV HOME=/home/scraper
 
@@ -54,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && if [ "$ARCH" = "amd64" ]; then YT_DLP_BIN="yt-dlp_linux"; \
        elif [ "$ARCH" = "arm64" ]; then YT_DLP_BIN="yt-dlp_linux_aarch64"; \
        else YT_DLP_BIN="yt-dlp_linux"; fi \
-    && curl -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YT_DLP_BIN}" \
+    && curl -L "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/${YT_DLP_BIN}" \
        -o /usr/local/bin/yt-dlp \
     && chmod +x /usr/local/bin/yt-dlp
 
