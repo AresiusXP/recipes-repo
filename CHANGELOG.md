@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.37] — 2026-07-08
+
+_Chart-only release (appVersion unchanged)_
+
+- fix(scraper): pin yt-dlp to 2026.07.04 and configure Renovate
+
 ## [Scraper 1.2.1] — 2026-07-08
 
 _Scraper service release_
