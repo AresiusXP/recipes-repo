@@ -13,7 +13,7 @@
   },
   "overrides": {
     "next-auth": {
-      "@auth/core": "0.41.1"
+      "@auth/core": "0.41.2"
     },
     "postcss": "^8.5.10"
   },
