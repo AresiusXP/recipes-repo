@@ -700,8 +700,8 @@ async function waitForGeminiFileActive(fileName: string, apiKey: string, log: pi
  * If GEMINI_API_KEY is not set or the upload fails, falls back to caption-only
  * (videoUrl will be null).
  */
-async function scrapeInstagramReel(url: string): Promise<ScrapedPage> {
-  const log = logger.child({ component: "instagram", url });
+async function scrapeInstagramReel(url: string, parentLog?: pino.Logger): Promise<ScrapedPage> {
+  const log = (parentLog ?? logger).child({ component: "instagram", url });
   log.info("Extracting Instagram reel via yt-dlp");
 
   // Step 1: get metadata (title, caption, thumbnail) without downloading video
@@ -716,6 +716,29 @@ async function scrapeInstagramReel(url: string): Promise<ScrapedPage> {
     raw = stdout;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+
+    // Instagram /p/ URLs can be photo-only posts or carousels with no video
+    // at all — yt-dlp correctly reports "No video formats found!" for these.
+    // Fall back to the generic HTML scraper instead of failing the job.
+    if (msg.includes("No video formats found")) {
+      log.warn(
+        { err: msg },
+        "Instagram post has no video — falling back to generic page scrape"
+      );
+      const generic = await scrapeGenericPage(url, log);
+
+      // Instagram's SPA shell means the page body is usually empty when
+      // fetched via curl — the caption only shows up in the og:title meta
+      // tag (extracted as `title` by extractFromHtml). Since only `content`
+      // is forwarded to Gemini for recipe extraction, fall back to using
+      // the title (which contains the caption) as content when the body
+      // text extraction came up empty.
+      if (!generic.content || generic.content.trim().length === 0) {
+        return { ...generic, content: generic.title };
+      }
+      return generic;
+    }
+
     log.error({ err: msg }, "yt-dlp metadata extraction failed");
     throw new Error(`yt-dlp failed to extract Instagram reel: ${msg}`);
   }
@@ -769,16 +792,14 @@ async function scrapeInstagramReel(url: string): Promise<ScrapedPage> {
   };
 }
 
-export async function scrapePage(url: string): Promise<ScrapedPage> {
-  const log = logger.child({ component: "scraper", url });
-
-  log.debug("Fetching page");
-
-  // ── Instagram reels: use yt-dlp instead of curl/Playwright ──
-  if (isInstagramReelUrl(url)) {
-    return scrapeInstagramReel(url);
-  }
-
+/**
+ * Fetches a page via curl (with browser fallback on login walls / 403s) and
+ * extracts recipe content from the resulting HTML. This is the generic,
+ * non-Instagram scraping path — extracted so it can also be used as a
+ * fallback when an Instagram URL turns out not to have a video (e.g. a
+ * photo-only post or carousel), for which yt-dlp cannot extract anything.
+ */
+async function scrapeGenericPage(url: string, log: pino.Logger): Promise<ScrapedPage> {
   // ── Step 1: try curl ──
   let html: string;
   let effectiveUrl: string;
@@ -899,6 +920,19 @@ export async function scrapePage(url: string): Promise<ScrapedPage> {
   );
 
   return extracted;
+}
+
+export async function scrapePage(url: string): Promise<ScrapedPage> {
+  const log = logger.child({ component: "scraper", url });
+
+  log.debug("Fetching page");
+
+  // ── Instagram reels/posts: use yt-dlp instead of curl/Playwright ──
+  if (isInstagramReelUrl(url)) {
+    return scrapeInstagramReel(url, log);
+  }
+
+  return scrapeGenericPage(url, log);
 }
 
 function findBestImage($: cheerio.CheerioAPI): string | null {
