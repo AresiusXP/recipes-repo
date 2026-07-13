@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Scraper 1.2.2] — 2026-07-13
+
+_Scraper service release_
+
+- fix(scraper): fall back to generic scraping for Instagram photo-only posts
+- feat(admin): add service versions and implement secure user deletion
+
 ## [Helm 0.1.39] — 2026-07-08
 
 _Chart-only release (appVersion unchanged)_
