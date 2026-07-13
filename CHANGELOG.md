@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.40] — 2026-07-13
+
+_Chart-only release (appVersion unchanged)_
+
+- fix(scraper): fall back to generic scraping for Instagram photo-only posts
+
 ## [Scraper 1.2.2] — 2026-07-13
 
 _Scraper service release_
