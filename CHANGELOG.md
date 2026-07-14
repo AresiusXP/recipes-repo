@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.43] — 2026-07-14
+
+_Chart-only release (appVersion unchanged)_
+
+- No user-facing changes.
+
 ## [Scraper 1.2.3] — 2026-07-14
 
 _Scraper service release_
