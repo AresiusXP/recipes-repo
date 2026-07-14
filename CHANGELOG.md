@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.41] — 2026-07-14
+
+_Chart-only release (appVersion unchanged)_
+
+- chore(deps): update dependency @auth/core to v0.41.2 (#5)
+- build(deps): bump the npm_and_yarn group across 2 directories with 2 updates (#16)
+- chore(deps): update tailwindcss monorepo to v4.3.2 (#10)
+- fix(deps): update react monorepo (#12)
+- fix(deps): update nextjs monorepo to v16.2.10 (#11)
+- chore(deps): update dependency vitest to v4.1.10 (#9)
+- chore(deps): update dependency next-auth to v5.0.0-beta.31 (#8)
+- chore(deps): update dependency @vitejs/plugin-react to v6.0.3 (#7)
+- chore(deps): update dependency @types/node to v20.19.43 (#6)
+- chore(deps): update dependency tsx to v4.23.1 (#14)
+- chore(deps): update dependency pg to v8.22.0 (#13)
+
 ## [Backend 1.5.1] — 2026-07-14
 
 _Backend service release_
