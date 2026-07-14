@@ -6,6 +6,7 @@ import Link from "next/link";
 import { searchRecipes } from "@/app/actions/recipes";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { formatReadable, isCookThisWeekActive } from "@/lib/cook-this-week";
+import { getRecipeListEmptyState } from "@/lib/recipe-list-empty-state";
 
 type ViewMode = "grid" | "list";
 const VIEW_MODE_KEY = "recipes:view-mode";
@@ -393,26 +394,30 @@ export function RecipeList({
           </svg>
         </div>
       ) : recipes.length === 0 ? (
-        <div className="py-16 text-center">
-          <p className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
-            {query || selectedTags.length > 0 || cookThisWeekOnly
-              ? "No recipes match your search"
-              : "No recipes yet"}
-          </p>
-          <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
-            {query || selectedTags.length > 0 || cookThisWeekOnly
-              ? "Try different search terms or filters"
-              : "Add your first recipe to get started!"}
-          </p>
-          {!(query || selectedTags.length > 0 || cookThisWeekOnly) && (
-            <Link
-              href="/recipes/new"
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-dark"
-            >
-              Add Your First Recipe
-            </Link>
-          )}
-        </div>
+        (() => {
+          const emptyState = getRecipeListEmptyState({
+            hasActiveFilters: Boolean(query || selectedTags.length > 0 || cookThisWeekOnly),
+            favoritesOnly,
+          });
+          return (
+            <div className="py-16 text-center">
+              <p className="text-lg font-medium text-zinc-500 dark:text-zinc-400">
+                {emptyState.heading}
+              </p>
+              <p className="mt-2 text-sm text-zinc-400 dark:text-zinc-500">
+                {emptyState.subtext}
+              </p>
+              {emptyState.cta && (
+                <Link
+                  href={emptyState.cta.href}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-dark"
+                >
+                  {emptyState.cta.label}
+                </Link>
+              )}
+            </div>
+          );
+        })()
       ) : effectiveView === "grid" ? (
         /* ── Grid view ── */
         <div className="grid gap-4 sm:grid-cols-2">

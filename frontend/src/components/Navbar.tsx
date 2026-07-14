@@ -41,6 +41,7 @@ export async function Navbar() {
               viewBox="0 0 24 24"
               fill="currentColor"
               className="h-4 w-4 text-amber-500"
+              aria-hidden="true"
             >
               <path
                 fillRule="evenodd"
@@ -63,6 +64,7 @@ export async function Navbar() {
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 className="h-4 w-4"
+                aria-hidden="true"
               >
                 <path
                   fillRule="evenodd"
@@ -87,6 +89,7 @@ export async function Navbar() {
               className="h-4 w-4"
               viewBox="0 0 20 20"
               fill="currentColor"
+              aria-hidden="true"
             >
               <path
                 fillRule="evenodd"

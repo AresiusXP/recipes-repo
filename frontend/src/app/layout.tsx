@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Lora } from "next/font/google";
 import { getThemePreference } from "@/app/actions/user";
 import { ThemeController } from "@/components/ThemeController";
+import { ToastProvider } from "@/components/ToastProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -52,8 +53,14 @@ export default async function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col font-serif text-lg leading-relaxed">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:shadow-lg"
+        >
+          Skip to main content
+        </a>
         <ThemeController theme={theme} />
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

@@ -13,6 +13,7 @@ import {
 } from "@/app/actions/user";
 import { type ProviderInfo } from "@/lib/auth";
 import { applyTheme } from "@/lib/theme";
+import { useToast } from "@/components/ToastProvider";
 
 interface SettingsFormProps {
   initialSettings: UserSettings;
@@ -30,11 +31,11 @@ export function SettingsForm({
   errorParam,
 }: SettingsFormProps) {
   const router = useRouter();
+  const { showToast } = useToast();
   const [name, setName] = useState(initialSettings.name || "");
   const [autoTranslateLanguage, setAutoTranslateLanguage] = useState<AutoTranslateLanguage>(initialSettings.autoTranslateLanguage);
   const [themePreference, setThemePreference] = useState(initialSettings.themePreference);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Linking state
   const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
@@ -44,7 +45,6 @@ export function SettingsForm({
   const [currentImage, setCurrentImage] = useState<string | null>(initialSettings.image);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [avatarMessage, setAvatarMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Revoke object URL to prevent memory leaks
@@ -73,19 +73,18 @@ export function SettingsForm({
     // Client-side validation
     const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!allowedTypes.includes(file.type)) {
-      setAvatarMessage({ type: "error", text: "Please select a JPEG, PNG, WebP, or GIF image." });
+      showToast("error", "Please select a JPEG, PNG, WebP, or GIF image.");
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      setAvatarMessage({ type: "error", text: "Image must be under 10MB." });
+      showToast("error", "Image must be under 10MB.");
       return;
     }
 
     // Create preview
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
-    setAvatarMessage(null);
   }
 
   async function handleUpload() {
@@ -93,7 +92,6 @@ export function SettingsForm({
     if (!file) return;
 
     setUploading(true);
-    setAvatarMessage(null);
 
     try {
       const formData = new FormData();
@@ -104,20 +102,17 @@ export function SettingsForm({
       if (result.success && result.imagePath) {
         setCurrentImage(result.imagePath);
         setPreviewUrl(null);
-        setAvatarMessage({ type: "success", text: "Profile picture updated" });
+        showToast("success", "Profile picture updated");
         // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
         router.refresh();
       } else {
-        setAvatarMessage({ type: "error", text: result.error || "Failed to upload image" });
+        showToast("error", result.error || "Failed to upload image");
       }
     } catch (err) {
-      setAvatarMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "An unexpected error occurred",
-      });
+      showToast("error", err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setUploading(false);
     }
@@ -125,7 +120,6 @@ export function SettingsForm({
 
   async function handleRemoveImage() {
     setUploading(true);
-    setAvatarMessage(null);
 
     try {
       const result = await removeProfileImage();
@@ -133,20 +127,17 @@ export function SettingsForm({
       if (result.success) {
         setCurrentImage(null);
         setPreviewUrl(null);
-        setAvatarMessage({ type: "success", text: "Profile picture removed" });
+        showToast("success", "Profile picture removed");
         // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = "";
         }
         router.refresh();
       } else {
-        setAvatarMessage({ type: "error", text: result.error || "Failed to remove image" });
+        showToast("error", result.error || "Failed to remove image");
       }
     } catch (err) {
-      setAvatarMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "An unexpected error occurred",
-      });
+      showToast("error", err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setUploading(false);
     }
@@ -154,7 +145,6 @@ export function SettingsForm({
 
   function handleCancelPreview() {
     setPreviewUrl(null);
-    setAvatarMessage(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -166,7 +156,6 @@ export function SettingsForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    setMessage(null);
 
     try {
       const result = await updateUserSettings({
@@ -176,19 +165,16 @@ export function SettingsForm({
       });
 
       if (result.success) {
-        setMessage({ type: "success", text: "Settings saved successfully" });
+        showToast("success", "Settings saved successfully");
         // Apply the new theme immediately on the client so the user sees the
         // change without waiting for a full server round-trip.
         applyTheme(themePreference);
         router.refresh();
       } else {
-        setMessage({ type: "error", text: result.error || "Failed to save settings" });
+        showToast("error", result.error || "Failed to save settings");
       }
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "An unexpected error occurred",
-      });
+      showToast("error", err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setSaving(false);
     }
@@ -280,19 +266,6 @@ export function SettingsForm({
             </p>
           </div>
         </div>
-
-        {/* Avatar status message */}
-        {avatarMessage && (
-          <div
-            className={`mt-4 rounded-lg border p-3 text-sm ${
-              avatarMessage.type === "success"
-                ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300"
-                : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-            }`}
-          >
-            {avatarMessage.text}
-          </div>
-        )}
       </div>
 
       {/* Linked Accounts Section */}
@@ -451,19 +424,6 @@ export function SettingsForm({
             ))}
           </div>
         </div>
-
-        {/* Status Message */}
-        {message && (
-          <div
-            className={`rounded-lg border p-3 text-sm ${
-              message.type === "success"
-                ? "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-300"
-                : "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
 
         {/* Submit */}
         <button

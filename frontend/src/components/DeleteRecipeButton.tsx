@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { deleteRecipe } from "@/app/actions/recipes";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useToast } from "@/components/ToastProvider";
 
 export function DeleteRecipeButton({ recipeId }: { recipeId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { showToast } = useToast();
 
   async function handleDelete() {
     setDeleting(true);
@@ -14,35 +17,29 @@ export function DeleteRecipeButton({ recipeId }: { recipeId: string }) {
     } catch {
       setDeleting(false);
       setConfirming(false);
+      showToast("error", "Failed to delete recipe. Please try again.");
     }
   }
 
-  if (confirming) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-        >
-          {deleting ? "Deleting..." : "Confirm"}
-        </button>
-        <button
-          onClick={() => setConfirming(false)}
-          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
-          Cancel
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <button
-      onClick={() => setConfirming(true)}
-      className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
-    >
-      Delete
-    </button>
+    <>
+      <ConfirmDialog
+        open={confirming}
+        title="Delete recipe?"
+        description="This action cannot be undone."
+        confirmLabel="Delete"
+        confirmingLabel="Deleting…"
+        isConfirming={deleting}
+        tone="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setConfirming(false)}
+      />
+      <button
+        onClick={() => setConfirming(true)}
+        className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+      >
+        Delete
+      </button>
+    </>
   );
 }
