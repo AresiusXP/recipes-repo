@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.13.2] — 2026-07-15
+
+_Frontend service release_
+
+- fix: gate backdrop-blur to sm breakpoint for mobile scroll performance
+
 ## [Helm 0.1.44] — 2026-07-15
 
 _Chart-only release (appVersion unchanged)_
