@@ -183,7 +183,7 @@ export function SettingsForm({
   return (
     <div className="space-y-8">
       {/* Profile Picture Section */}
-      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
+      <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-800/60 sm:backdrop-blur-sm">
         <h2 className="mb-4 text-sm font-medium text-zinc-900 dark:text-zinc-50">
           Profile Picture
         </h2>
@@ -270,7 +270,7 @@ export function SettingsForm({
 
       {/* Linked Accounts Section */}
       {configuredProviders.length > 0 && (
-        <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/60">
+        <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-6 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-800/60 sm:backdrop-blur-sm">
           <h2 className="mb-1 text-sm font-medium text-zinc-900 dark:text-zinc-50">
             Linked Accounts
           </h2>
@@ -361,7 +361,7 @@ export function SettingsForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
-            className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
+            className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 placeholder-zinc-400 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
           />
         </div>
 

@@ -227,7 +227,7 @@ export function RecipeList({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search recipes..."
-              className="w-full rounded-2xl border border-zinc-200/80 bg-white/80 py-3 pl-11 pr-4 text-base text-zinc-900 placeholder-zinc-400 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-800/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800"
+              className="w-full rounded-2xl border border-zinc-200/80 bg-white/80 py-3 pl-11 pr-4 text-base text-zinc-900 placeholder-zinc-400 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-800/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:placeholder-zinc-500 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
             />
           </div>
 

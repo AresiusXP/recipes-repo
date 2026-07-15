@@ -170,7 +170,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
-          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
         />
       </div>
 
@@ -187,7 +187,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
         />
       </div>
 
@@ -282,7 +282,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
                 value={ingredient}
                 onChange={(e) => updateIngredient(i, e.target.value)}
                 placeholder={`Ingredient ${i + 1}`}
-                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
+                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
               />
               <button
                 type="button"
@@ -332,7 +332,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
                 onChange={(e) => updateStep(i, e.target.value)}
                 placeholder={`Step ${i + 1}`}
                 rows={2}
-                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
+                className="flex-1 rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
               />
               <button
                 type="button"
@@ -371,7 +371,7 @@ export function RecipeEditForm({ recipeId, initialData, initialImagePath }: Reci
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
           placeholder="vegetarian, quick, italian..."
-          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm backdrop-blur-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800"
+          className="w-full rounded-xl border border-zinc-300/80 bg-white/80 px-4 py-3 text-base text-zinc-900 shadow-sm transition-all focus:border-primary focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary/10 dark:border-zinc-700/80 dark:bg-zinc-800/60 dark:text-zinc-50 dark:focus:bg-zinc-800 sm:backdrop-blur-sm"
         />
         <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
           Separate tags with commas

@@ -28,7 +28,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       id="main-content"
       className="flex min-h-screen items-center justify-center bg-gradient-to-b from-amber-50 to-background dark:from-zinc-900 dark:to-background px-4"
     >
-      <div className="w-full max-w-sm rounded-3xl border border-zinc-200/80 bg-white/90 p-8 shadow-xl backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80">
+      <div className="w-full max-w-sm rounded-3xl border border-zinc-200/80 bg-white/90 p-8 shadow-xl dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:backdrop-blur-sm">
         <div className="mb-8 text-center">
           <h1 className="font-serif text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
             🍳 Recipes Repo

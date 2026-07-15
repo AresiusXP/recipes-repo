@@ -36,7 +36,7 @@ export default async function RecipeDetailPage(props: { params: Promise<{ id: st
   const showTranslateButton = hasSourceUrl || !recipe.hasBeenTranslated;
 
   return (
-    <article className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm backdrop-blur-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10">
+    <article className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-zinc-200/80 bg-white/90 p-6 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-800/80 sm:p-10 sm:backdrop-blur-sm">
       {/* Header */}
       <div className="mb-8">
         <div className="mb-4">
