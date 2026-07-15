@@ -424,7 +424,7 @@ export function RecipeList({
           {recipes.map((recipe) => (
             <div
               key={recipe.id}
-              className="group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white/80 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-800/60"
+              className="group relative overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-900"
             >
               {/* Favorite button sits above the link, outside it */}
               <div className="absolute right-2 top-2 z-10">
@@ -509,7 +509,7 @@ export function RecipeList({
           {recipes.map((recipe) => (
             <div
               key={recipe.id}
-              className="group relative flex items-center overflow-hidden rounded-2xl border border-zinc-200/80 bg-white/80 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-800/60"
+              className="group relative flex items-center overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-md dark:border-zinc-800/80 dark:bg-zinc-900"
             >
               <Link
                 href={`/recipes/${recipe.id}`}

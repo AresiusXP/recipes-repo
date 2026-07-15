@@ -21,7 +21,7 @@ export async function Navbar() {
   const isAdmin = isAdminEmail(session?.user?.email);
 
   return (
-    <nav className="sticky top-4 z-50 mx-auto mt-4 w-[calc(100%-2rem)] max-w-4xl rounded-2xl border border-zinc-200/50 bg-white/70 shadow-sm backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-800/50">
+    <nav className="sticky top-4 z-50 mx-auto mt-4 w-[calc(100%-2rem)] max-w-4xl transform-gpu rounded-2xl border border-zinc-200/50 bg-white/70 shadow-sm backdrop-blur-md dark:border-zinc-800/50 dark:bg-zinc-800/50">
       <div className="flex h-14 items-center justify-between px-4">
         <Link
           href="/recipes"
