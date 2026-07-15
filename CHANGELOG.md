@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.13.1] — 2026-07-15
+
+_Frontend service release_
+
+- fix: remove loading skeletons and optimize scroll performance
+- add .pi to gitignore
+- feat: frontend UX improvements across route resilience, favorites, layout, and dialogs
+
 ## [Helm 0.1.43] — 2026-07-14
 
 _Chart-only release (appVersion unchanged)_
