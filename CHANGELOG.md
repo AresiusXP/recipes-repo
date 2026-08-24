@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.46] — 2026-08-24
+
+_Chart-only release (appVersion unchanged)_
+
+- fix(deps): update nextjs monorepo to v16.3.2 (#38)
+- chore(deps): update dependency @vitejs/plugin-react to v6.1.0 (#35)
+- chore(deps): update dependency vitest to v4.1.11 (#33)
+- fix(deps): update react monorepo (#34)
+- chore(deps): update dependency tsx to v4.23.12 (#32)
+- chore(deps): update dependency pg to v8.23.0 (#36)
+- chore(deps): update golang docker tag to v1.27 (#37)
+- build(deps): bump sharp (#41)
+- fix(deps): bump vulnerable transitive deps (brace-expansion, nanoid, postcss, undici, body-parser) (#40)
+- chore(deps): update mcr.microsoft.com/playwright docker tag to v1.62.1 (#19)
+- chore(deps): update playwright monorepo to v1.62.1 (#20)
+- chore(deps): update dependency @auth/core to v0.41.3 [security] (#29)
+- chore(deps): update dependency eslint to v9.39.5 (#17)
+- chore(deps): update dependency typescript-eslint to v8.67.0 (#18)
+- chore(deps): update tailwindcss monorepo to v4.3.3 (#27)
+- chore(deps): update dependency next-auth to v5.0.0-beta.32 [security] (#30)
+- fix(deps): update dependency next to v16.2.11 [security] (#31)
+- chore(deps): update actions/upload-artifact action to v7 (#26)
+- fix(deps): update module github.com/go-chi/chi/v5 to v5.3.2 (#21)
+- chore(deps): update actions/setup-node action to v7 (#25)
+- fix(deps): update module github.com/jackc/pgx/v5 to v5.10.0 (#22)
+- chore(deps): update actions/checkout action to v7 (#23)
+- docs: add MIT license
+
 ## [Frontend 0.13.3] — 2026-08-24
 
 _Frontend service release_
