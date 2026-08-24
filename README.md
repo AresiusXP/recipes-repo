@@ -280,3 +280,7 @@ See [`helm/recipes/values.yaml`](helm/recipes/values.yaml) for all configurable 
 - **Scraping limitations**: Some recipe sites block automated access. Use the manual paste fallback when URL import fails.
 - **Async import**: Recipe imports from URLs are asynchronous. The UI polls for job status and redirects to the new recipe once extraction is complete.
 - **Migrations**: The database schema is defined in `backend/db/schema.sql`. For Docker Compose / E2E, this file is applied automatically. For Kubernetes, apply it manually against your PostgreSQL instance before the first deploy (e.g. `psql $DATABASE_URL -f backend/db/schema.sql`). The Helm chart includes a migration initContainer placeholder that will be wired up in a future release.
+
+## License
+
+MIT © Patricio Danos. See [LICENSE](./LICENSE).

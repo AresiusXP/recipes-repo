@@ -2,6 +2,7 @@
   "name": "recipes-scraper",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Async web scraper microservice for recipes-repo",
   "scripts": {
     "dev": "tsx watch src/server.ts",

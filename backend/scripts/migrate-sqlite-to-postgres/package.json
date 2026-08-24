@@ -2,6 +2,7 @@
   "name": "migrate-sqlite-to-postgres",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "One-time migration script from SQLite to PostgreSQL",
   "scripts": {
