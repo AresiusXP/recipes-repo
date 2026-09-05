@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Frontend 0.14.0] — 2026-09-05
+
+_Frontend service release_
+
+- feat: add per-recipe AI chat assistant
+- fix(frontend): install curl in production image for compose healthcheck (#42)
+
 ## [Backend 1.6.0] — 2026-09-05
 
 _Backend service release_
