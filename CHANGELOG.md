@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Backend 1.6.0] — 2026-09-05
+
+_Backend service release_
+
+- feat: add per-recipe AI chat assistant
+- fix(frontend): install curl in production image for compose healthcheck (#42)
+- fix(deps): update nextjs monorepo to v16.3.2 (#38)
+- chore(deps): update dependency @vitejs/plugin-react to v6.1.0 (#35)
+- chore(deps): update dependency vitest to v4.1.11 (#33)
+- fix(deps): update react monorepo (#34)
+- chore(deps): update dependency tsx to v4.23.12 (#32)
+- chore(deps): update dependency pg to v8.23.0 (#36)
+- chore(deps): update golang docker tag to v1.27 (#37)
+- build(deps): bump sharp (#41)
+- fix(deps): bump vulnerable transitive deps (brace-expansion, nanoid, postcss, undici, body-parser) (#40)
+- chore(deps): update mcr.microsoft.com/playwright docker tag to v1.62.1 (#19)
+- chore(deps): update playwright monorepo to v1.62.1 (#20)
+- chore(deps): update dependency @auth/core to v0.41.3 [security] (#29)
+- chore(deps): update dependency eslint to v9.39.5 (#17)
+- chore(deps): update dependency typescript-eslint to v8.67.0 (#18)
+- chore(deps): update tailwindcss monorepo to v4.3.3 (#27)
+- chore(deps): update dependency next-auth to v5.0.0-beta.32 [security] (#30)
+- fix(deps): update dependency next to v16.2.11 [security] (#31)
+- chore(deps): update actions/upload-artifact action to v7 (#26)
+- fix(deps): update module github.com/go-chi/chi/v5 to v5.3.2 (#21)
+- chore(deps): update actions/setup-node action to v7 (#25)
+- fix(deps): update module github.com/jackc/pgx/v5 to v5.10.0 (#22)
+- chore(deps): update actions/checkout action to v7 (#23)
+- docs: add MIT license
+- fix: gate backdrop-blur to sm breakpoint for mobile scroll performance
+- fix: remove loading skeletons and optimize scroll performance
+- add .pi to gitignore
+- feat: frontend UX improvements across route resilience, favorites, layout, and dialogs
+- chore(deps): update dependency @auth/core to v0.41.2 (#5)
+- build(deps): bump the npm_and_yarn group across 2 directories with 2 updates (#16)
+- chore(deps): update tailwindcss monorepo to v4.3.2 (#10)
+- fix(deps): update react monorepo (#12)
+- fix(deps): update nextjs monorepo to v16.2.10 (#11)
+- chore(deps): update dependency vitest to v4.1.10 (#9)
+- chore(deps): update dependency next-auth to v5.0.0-beta.31 (#8)
+- chore(deps): update dependency @vitejs/plugin-react to v6.0.3 (#7)
+- chore(deps): update dependency @types/node to v20.19.43 (#6)
+- chore(deps): update dependency tsx to v4.23.1 (#14)
+
 ## [Helm 0.1.46] — 2026-08-24
 
 _Chart-only release (appVersion unchanged)_
