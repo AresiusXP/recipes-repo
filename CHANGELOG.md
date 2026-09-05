@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Helm 0.1.48] — 2026-09-05
+
+_Chart-only release (appVersion unchanged)_
+
+- No user-facing changes.
+
 ## [Frontend 0.14.0] — 2026-09-05
 
 _Frontend service release_
