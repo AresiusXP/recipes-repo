@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -27,11 +28,22 @@ import (
 type RecipeHandler struct {
 	db            *pgxpool.Pool
 	scraperClient *scraper.Client
+
+	// chatMu guards chatLog, a per-user sliding-window request log used to
+	// rate-limit the chat assistant endpoint. In-memory is sufficient because
+	// every service in this Helm chart runs replicaCount: 1 (no cross-pod
+	// coordination needed); it resets harmlessly on pod restart.
+	chatMu  sync.Mutex
+	chatLog map[string][]time.Time
 }
 
 // NewRecipeHandler creates a new RecipeHandler.
 func NewRecipeHandler(db *pgxpool.Pool, scraperClient *scraper.Client) *RecipeHandler {
-	return &RecipeHandler{db: db, scraperClient: scraperClient}
+	return &RecipeHandler{
+		db:            db,
+		scraperClient: scraperClient,
+		chatLog:       make(map[string][]time.Time),
+	}
 }
 
 // ─── List recipes ─────────────────────────────────────────────────────────────
@@ -712,6 +724,117 @@ func (h *RecipeHandler) Translate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, models.SuccessResponse{Success: true})
+}
+
+// ─── Chat with recipe assistant ───────────────────────────────────────────────
+
+const (
+	// chatRateLimit and chatRateWindow bound how many chat messages a single
+	// user may send. In-memory (see chatLog on RecipeHandler) is sufficient
+	// because every service in this Helm chart runs replicaCount: 1.
+	chatRateLimit     = 20
+	chatRateWindow    = time.Hour
+	chatMaxMessageLen = 1000
+)
+
+type chatRequest struct {
+	Message string            `json:"message"`
+	History []gemini.ChatTurn `json:"history"`
+}
+
+// Chat answers a user's question about a specific recipe using a dedicated
+// Gemini chat model (see gemini.AskAboutRecipe). Conversation history is
+// ephemeral: the frontend holds it in memory and resends it with each
+// request, so nothing is persisted here.
+func (h *RecipeHandler) Chat(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r)
+	recipeID := chi.URLParam(r, "id")
+
+	var req chatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	message := strings.TrimSpace(req.Message)
+	if message == "" {
+		jsonError(w, "Message is required", http.StatusBadRequest)
+		return
+	}
+	if len(message) > chatMaxMessageLen {
+		jsonError(w, fmt.Sprintf("Message is too long (max %d characters)", chatMaxMessageLen), http.StatusBadRequest)
+		return
+	}
+
+	if !h.allowChatMessage(userID) {
+		jsonError(w, "You're sending messages too quickly. Please wait a bit and try again.", http.StatusTooManyRequests)
+		return
+	}
+
+	recipe, err := h.getRecipeChatContext(r.Context(), recipeID, userID)
+	if err != nil {
+		jsonError(w, "Recipe not found", http.StatusNotFound)
+		return
+	}
+
+	reply, err := gemini.AskAboutRecipe(r.Context(), *recipe, req.History, message)
+	if err != nil {
+		slog.Error("recipe chat request failed", "error", err, "recipeId", recipeID)
+		jsonError(w, "Failed to get a response. Please try again.", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, map[string]string{"reply": reply})
+}
+
+// allowChatMessage enforces a simple sliding-window rate limit per user,
+// pruning timestamps older than chatRateWindow on every call.
+func (h *RecipeHandler) allowChatMessage(userID string) bool {
+	h.chatMu.Lock()
+	defer h.chatMu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-chatRateWindow)
+
+	var kept []time.Time
+	for _, t := range h.chatLog[userID] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+
+	if len(kept) >= chatRateLimit {
+		h.chatLog[userID] = kept
+		return false
+	}
+
+	h.chatLog[userID] = append(kept, now)
+	return true
+}
+
+// getRecipeChatContext fetches only the fields needed to ground a chat answer
+// (title/description/ingredients/steps) — a lighter query than
+// getRecipeByID, which also joins tags and is called far less often than chat.
+func (h *RecipeHandler) getRecipeChatContext(ctx context.Context, recipeID, userID string) (*gemini.RecipeChatContext, error) {
+	var rc gemini.RecipeChatContext
+	var description *string
+	var ingredientsJSON, stepsJSON string
+
+	err := h.db.QueryRow(ctx, `
+		SELECT title, description, ingredients, steps
+		FROM "Recipe" WHERE id=$1 AND "userId"=$2
+	`, recipeID, userID).Scan(&rc.Title, &description, &ingredientsJSON, &stepsJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	if description != nil {
+		rc.Description = *description
+	}
+	json.Unmarshal([]byte(ingredientsJSON), &rc.Ingredients)
+	json.Unmarshal([]byte(stepsJSON), &rc.Steps)
+
+	return &rc, nil
 }
 
 // ─── Toggle favorite ──────────────────────────────────────────────────────────

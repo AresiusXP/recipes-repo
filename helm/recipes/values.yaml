@@ -111,6 +111,7 @@ backend:
     # Directory where media files are stored (must match the PVC mount path)
     mediaDir: "/media"
     geminiModel: "gemini-2.0-flash"
+    geminiChatModel: "gemini-flash-lite-latest"
     logLevel: "info"
     port: "8080"
     # Comma-separated list of admin email addresses.

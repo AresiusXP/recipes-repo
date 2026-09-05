@@ -173,6 +173,11 @@ export interface ShareableUser {
   image: string | null;
 }
 
+export interface ChatTurn {
+  role: "user" | "model";
+  content: string;
+}
+
 export type AutoTranslateLanguage = "en" | "nl" | "es" | null;
 
 export interface UserSettings {
@@ -339,6 +344,22 @@ export async function translateRecipe(
     return { success: true };
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "Failed to translate" };
+  }
+}
+
+export async function askRecipeQuestion(
+  id: string,
+  message: string,
+  history: ChatTurn[]
+): Promise<{ success: boolean; reply?: string; error?: string }> {
+  try {
+    const result = await backendFetch<{ reply: string }>(`/api/recipes/${id}/chat`, {
+      method: "POST",
+      body: { message, history },
+    });
+    return { success: true, reply: result.reply };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Failed to get a response" };
   }
 }
 
