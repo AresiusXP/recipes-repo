@@ -23,12 +23,9 @@ const queue = new JobQueue(async (url: string) => {
   };
 });
 
-// Prune old completed/failed jobs every 30 minutes
-setInterval(() => queue.prune(), 30 * 60 * 1000);
-
 // ─── Express app ──────────────────────────────────────────────────────────────
 
-const app = express();
+export const app = express();
 app.use(express.json());
 
 /**
@@ -38,7 +35,7 @@ app.use(express.json());
  * Returns: { jobId, status: "queued" } — HTTP 202
  */
 app.post("/jobs", (req, res) => {
-  const { jobId, url } = req.body as { jobId?: string; url?: string };
+  const { jobId, url } = (req.body ?? {}) as { jobId?: string; url?: string };
 
   if (!jobId || typeof jobId !== "string") {
     res.status(400).json({ error: "jobId is required" });
@@ -103,6 +100,11 @@ app.get("/health", (_req, res) => {
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 
-app.listen(PORT, "0.0.0.0", () => {
-  log.info({ port: PORT }, "Scraper service started");
-});
+if (require.main === module) {
+  // Prune old completed/failed jobs every 30 minutes
+  setInterval(() => queue.prune(), 30 * 60 * 1000);
+
+  app.listen(PORT, "0.0.0.0", () => {
+    log.info({ port: PORT }, "Scraper service started");
+  });
+}
