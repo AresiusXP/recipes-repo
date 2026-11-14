@@ -41,6 +41,7 @@ services:
       BACKEND_INTERNAL_SECRET: e2e-internal-secret
       GEMINI_API_KEY: ${GEMINI_API_KEY:-test-key}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-flash-lite-latest}
       SCRAPER_URL: http://scraper:3001
       MEDIA_DIR: /media
       PORT: "8080"

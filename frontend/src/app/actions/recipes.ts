@@ -21,6 +21,7 @@ import {
   setCookThisWeek as apiSetCookThisWeek,
   removeCookThisWeek as apiRemoveCookThisWeek,
   getOtherUsers as apiGetOtherUsers,
+  askRecipeQuestion as apiAskRecipeQuestion,
 } from "@/lib/api-client";
 import type {
   Recipe,
@@ -28,11 +29,12 @@ import type {
   RecipeFormData,
   ImportJobStatus,
   ShareableUser,
+  ChatTurn,
 } from "@/lib/api-client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-export type { Recipe, RecipeListItem, RecipeFormData, ImportJobStatus, ShareableUser } from "@/lib/api-client";
+export type { Recipe, RecipeListItem, RecipeFormData, ImportJobStatus, ShareableUser, ChatTurn } from "@/lib/api-client";
 
 // Re-export types that components expect from the old actions
 export interface ImportResult {
@@ -128,6 +130,14 @@ export async function translateRecipeAction(
   const result = await apiTranslateRecipe(id, targetLanguage);
   if (result.success) revalidatePath(`/recipes/${id}`);
   return result;
+}
+
+export async function askRecipeAssistantAction(
+  id: string,
+  message: string,
+  history: ChatTurn[]
+): Promise<{ success: boolean; reply?: string; error?: string }> {
+  return apiAskRecipeQuestion(id, message, history);
 }
 
 export async function shareRecipeAction(
