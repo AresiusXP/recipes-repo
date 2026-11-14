@@ -8,8 +8,11 @@
   "scripts": {
     "migrate": "node migrate.mjs"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^13.0.0",
     "pg": "^8.13.0"
   }
 }
