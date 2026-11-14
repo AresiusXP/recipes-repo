@@ -102,6 +102,7 @@ func main() {
 		r.Get("/api/recipes/import/{jobId}", recipeHandler.GetImportJobStatus)
 
 		// Recipe actions
+		r.Post("/api/recipes/{id}/chat", recipeHandler.Chat)
 		r.Post("/api/recipes/{id}/translate", recipeHandler.Translate)
 		r.Post("/api/recipes/{id}/share", recipeHandler.Share)
 		r.Post("/api/recipes/{id}/favorite", recipeHandler.ToggleFavorite)

@@ -8,7 +8,7 @@ legacy SQLite database to the new PostgreSQL database.
 - The new PostgreSQL pod is deployed and healthy (via the `recipes-db` Helm release).
 - You have `kubectl` access to the cluster.
 - You have a copy of the SQLite database file (`recipes.db`) from the running pod.
-- Node.js 20+ is available on the machine running the migration script.
+- Node.js 22+ is available on the machine running the migration script.
 
 ---
 
@@ -70,7 +70,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrator
-          image: node:20-bookworm-slim
+          image: node:22-bookworm-slim
           command:
             - /bin/sh
             - -c

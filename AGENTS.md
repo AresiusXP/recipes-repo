@@ -386,6 +386,7 @@ A one-time migration script lives at `backend/scripts/migrate-sqlite-to-postgres
 | `DATABASE_URL` | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`) |
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `GEMINI_MODEL` | Gemini model name (default: `gemini-2.0-flash`) |
+| `GEMINI_CHAT_MODEL` | Gemini model used for the in-recipe chat assistant (default: `gemini-flash-lite-latest`) — deliberately a cheaper/faster model since chat is called far more often than extraction/translation |
 | `MEDIA_DIR` | Image storage directory (default: `public/media`) |
 | `SCRAPER_URL` | Scraper service URL (e.g. `http://recipes-scraper:3001`) |
 | `BACKEND_INTERNAL_SECRET` | Shared secret protecting the internal auth endpoint (must match frontend) |
